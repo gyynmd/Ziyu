@@ -174,12 +174,15 @@ def check_mix_cancellation():
             raise InstanceError("组合任务已取消")
 
 
-def materialize(source: Path, output: Path, role: str, requested_weight: int, requested_axes: dict[str, float]) -> dict[str, object]:
+def materialize(source: Path, output: Path, role: str, requested_weight: int,
+                requested_axes: dict[str, float], selected_face: int | None = None) -> dict[str, object]:
     if not source.is_file() or source.stat().st_size < 12:
         raise InstanceError(f"字体源文件不可用：{source}")
     check_mix_cancellation()
     requested_weight = clamp_weight(requested_axes.get("wght", requested_weight))
-    face = pick_face(source, role, requested_weight)
+    # The preparation cache already selected a face for its identity. Reuse it
+    # only within this operation; the cache still rechecks source content.
+    face = pick_face(source, role, requested_weight) if selected_face is None else selected_face
     kwargs: dict[str, object] = {
         "lazy": True,
         "recalcTimestamp": False,
@@ -287,7 +290,8 @@ def main() -> int:
         if cache_dir:
             from font_prepare_cache import prepare
             result = prepare(Path(args.input), Path(args.output), args.role, requested_weight,
-                             axis_spec, Path(cache_dir), materialize, Path(__file__), pick_face)
+                             axis_spec, Path(cache_dir), materialize, Path(__file__), pick_face,
+                             selected_face_materializer=materialize)
         else:
             result = materialize(Path(args.input), Path(args.output), args.role, args.weight, parse_axis_spec(args.axes))
         print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))

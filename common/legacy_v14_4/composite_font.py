@@ -27,7 +27,7 @@ from fontTools.pens.transformPen import TransformPen
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTCollection, TTFont
 
-from composite_layout import (_role_transform, clear_imported_metric_variations,
+from composite_layout import (LayoutProbes, _role_transform, clear_imported_metric_variations,
                               enclose_imported_bounds, manual_tune)
 
 LATIN_CODEPOINTS = (
@@ -314,20 +314,25 @@ def build(args: argparse.Namespace) -> dict[str, object]:
     latin = digit = None
     latin_face = digit_face = -1
     try:
-        if not all(cp in (base.getBestCmap() or {}) for cp in (ord("中"), ord("A"), ord("1"))):
+        base_probes = LayoutProbes(base)
+        if not all(cp in base_probes.cmap for cp in (ord("中"), ord("A"), ord("1"))):
             raise CompositeError("中文基础字体必须同时包含中文、英文字母和数字，才能安全生成完整复合字体")
         _progress(args.progress, "latin", "正在导入英文字形", 20)
         latin, latin_face, latin_location = _load_font(latin_path, "latin", args.weight, args.latin_face)
         latin_glyph_set = latin.getGlyphSet(location=latin_location) if latin_location else latin.getGlyphSet()
-        latin_transform = _role_transform(base, latin, latin_glyph_set, "latin", tune)
+        latin_transform = _role_transform(base, latin, latin_glyph_set, "latin", tune, base_probes)
         digit, digit_face, digit_location = _load_font(digit_path, "digit", args.weight, args.digit_face)
         same_donor = (digit_face == latin_face and digit_location == latin_location
                       and digit_path.stat().st_size == latin_path.stat().st_size
                       and _sha256(digit_path) == _sha256(latin_path))
-        digit_glyph_set = digit.getGlyphSet(location=digit_location) if digit_location else digit.getGlyphSet()
-        digit_transform = (latin_transform if same_donor else
-                           _role_transform(base, digit, digit_glyph_set, "digit", tune))
-        del latin_glyph_set, digit_glyph_set
+        if same_donor:
+            digit_transform = latin_transform
+        else:
+            digit_glyph_set = digit.getGlyphSet(location=digit_location) if digit_location else digit.getGlyphSet()
+            digit_transform = _role_transform(base, digit, digit_glyph_set, "digit", tune, base_probes)
+            del digit_glyph_set
+        # All measurements describe the original base; release before mutation.
+        del latin_glyph_set, base_probes
         latin_replaced, latin_missing = _replace_codepoints(
             base, latin, LATIN_CODEPOINTS, "latin", latin_location, REQUIRED_LATIN, latin_transform, tune)
         latin.close(); latin = None; gc.collect()

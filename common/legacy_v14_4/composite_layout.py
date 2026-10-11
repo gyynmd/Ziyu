@@ -8,13 +8,46 @@ import statistics
 from fontTools.pens.boundsPen import BoundsPen
 from fontTools.ttLib import TTFont
 
-def _bounds_for_codepoint(font: TTFont, glyph_set, codepoint: int) -> tuple[float, float, float, float] | None:
-    glyph_name = (font.getBestCmap() or {}).get(codepoint)
+def _bounds_for_codepoint(font: TTFont, glyph_set, codepoint: int, cmap=None) -> tuple[float, float, float, float] | None:
+    glyph_name = (cmap if cmap is not None else (font.getBestCmap() or {})).get(codepoint)
     if not glyph_name or glyph_name not in glyph_set:
         return None
     pen = BoundsPen(glyph_set)
     glyph_set[glyph_name].draw(pen)
     return None if pen.bounds is None else tuple(float(value) for value in pen.bounds)
+
+
+class LayoutProbes:
+    """Measurements for one immutable font/location during a single build.
+
+    Discard before replacing glyphs. Never share these across builds or use a
+    default-location snapshot for a donor measured at a variable location.
+    """
+    def __init__(self, font: TTFont, glyph_set=None):
+        self.font = font
+        self.glyph_set = glyph_set if glyph_set is not None else font.getGlyphSet()
+        self.cmap = font.getBestCmap() or {}
+        self._bounds = {}
+        self._extents = {}
+
+    def bounds(self, codepoint: int):
+        if codepoint not in self._bounds:
+            self._bounds[codepoint] = _bounds_for_codepoint(
+                self.font, self.glyph_set, codepoint, self.cmap)
+        return self._bounds[codepoint]
+
+    def extents(self, role: str):
+        if role not in self._extents:
+            boxes = [box for box in (self.bounds(cp) for cp in
+                     map(ord, FLAT_HEIGHT_PROBES.get(role, ""))) if box and box[3] > box[1]]
+            self._extents[role] = (
+                (float(statistics.median(box[1] for box in boxes)),
+                 float(statistics.median(box[3] for box in boxes))) if boxes else None)
+        return self._extents[role]
+
+    def cjk_boxes(self):
+        return [box for box in (self.bounds(ord(char)) for char in CJK_BOX_PROBES)
+                if box and box[3] > box[1]]
 
 
 # Translation probes deliberately use flat-bottom glyphs. Rounded glyphs such as O/0/8/9
@@ -79,26 +112,20 @@ CJK_CAP_TOLERANCE = 0.05
 CJK_CAP_FACTOR_LIMITS = (1.0, 1.18)
 
 
-def _median_flat_extents(font: TTFont, glyph_set, role: str):
-    boxes = [box for box in (_bounds_for_codepoint(font, glyph_set, cp)
-                             for cp in map(ord, FLAT_HEIGHT_PROBES.get(role, "")))
-             if box and box[3] > box[1]]
-    if not boxes:
-        return None
-    return (float(statistics.median(box[1] for box in boxes)),
-            float(statistics.median(box[3] for box in boxes)))
+def _median_flat_extents(font: TTFont, glyph_set, role: str, probes=None):
+    probes = probes if probes is not None else LayoutProbes(font, glyph_set)
+    return probes.extents(role)
 
 
-def cjk_baseline_shift(base: TTFont, base_glyph_set=None) -> float:
+def cjk_baseline_shift(base: TTFont, base_glyph_set=None, probes=None) -> float:
     """Vertical move that seats baseline-0 Latin against this CJK design.
 
     Zero for every conventional CJK font (ideograph bottom about 8 % of the box
     below the baseline). A CJK design whose ideographs sit on, or far below,
     the baseline otherwise shows digits visibly low/high next to Han ("36岁").
     """
-    glyph_set = base_glyph_set if base_glyph_set is not None else base.getGlyphSet()
-    boxes = [box for box in (_bounds_for_codepoint(base, glyph_set, ord(char))
-                             for char in CJK_BOX_PROBES) if box and box[3] > box[1]]
+    probes = probes if probes is not None else LayoutProbes(base, base_glyph_set)
+    boxes = probes.cjk_boxes()
     if len(boxes) < 2:
         return 0.0
     bottom = float(statistics.median(box[1] for box in boxes))
@@ -114,16 +141,16 @@ def cjk_baseline_shift(base: TTFont, base_glyph_set=None) -> float:
     return max(-limit, min(limit, shift))
 
 
-def _cjk_box_height(base: TTFont, glyph_set) -> float | None:
-    boxes = [box for box in (_bounds_for_codepoint(base, glyph_set, ord(char))
-                             for char in CJK_BOX_PROBES) if box and box[3] > box[1]]
+def _cjk_box_height(base: TTFont, glyph_set, probes=None) -> float | None:
+    probes = probes if probes is not None else LayoutProbes(base, glyph_set)
+    boxes = probes.cjk_boxes()
     if len(boxes) < 2:
         return None
     height = float(statistics.median(box[3] - box[1] for box in boxes))
     return height if height >= base["head"].unitsPerEm * 0.5 else None
 
 
-def cjk_cap_correction(base: TTFont, base_glyph_set=None) -> tuple[float, float]:
+def cjk_cap_correction(base: TTFont, base_glyph_set=None, probes=None) -> tuple[float, float]:
     """(size factor, vertical shift) that sizes Latin to the CJK ideographs.
 
     (1.0, 0.0) for conventional pairings. When the base font's own Latin caps
@@ -131,9 +158,9 @@ def cjk_cap_correction(base: TTFont, base_glyph_set=None) -> tuple[float, float]
     and grows upward from the baseline; growing around the centre dropped the
     digits below the Han they sit beside ("36岁" read low on 花轮丸).
     """
-    glyph_set = base_glyph_set if base_glyph_set is not None else base.getGlyphSet()
-    cjk_h = _cjk_box_height(base, glyph_set)
-    cap = _median_flat_extents(base, glyph_set, "latin")
+    probes = probes if probes is not None else LayoutProbes(base, base_glyph_set)
+    cjk_h = _cjk_box_height(base, probes.glyph_set, probes)
+    cap = probes.extents("latin")
     if not cjk_h or not cap or cap[1] <= cap[0]:
         return 1.0, 0.0
     cap_h = cap[1] - cap[0]
@@ -164,8 +191,9 @@ def manual_tune(size_percent=0, offset_percent=0) -> tuple[int, int]:
 
 
 def _role_transform(base: TTFont, src: TTFont, src_glyph_set, role: str,
-                    tune: tuple[int, int] = (0, 0)) -> tuple[float, float]:
-    scale, shift = _auto_role_transform(base, src, src_glyph_set, role)
+                    tune: tuple[int, int] = (0, 0), base_probes=None) -> tuple[float, float]:
+    src_probes = LayoutProbes(src, src_glyph_set)
+    scale, shift = _auto_role_transform(base, src, src_glyph_set, role, base_probes, src_probes)
     size, offset = manual_tune(*tune)
     if not size and not offset:
         return scale, shift
@@ -173,19 +201,21 @@ def _role_transform(base: TTFont, src: TTFont, src_glyph_set, role: str,
     # Resize around the imported cap centre (like cjk_cap_correction), so a size
     # change does not move Latin/digits up or down; then apply the plain offset
     # (percent of the em, positive = up).
-    box = _median_flat_extents(src, src_glyph_set, role)
+    box = src_probes.extents(role)
     centre = ((box[0] + box[1]) / 2.0 * scale + shift) if box and box[1] > box[0] else upem * 0.35
     factor = 1.0 + size / 100.0
     return scale * factor, shift * factor + centre * (1.0 - factor) + upem * offset / 100.0
 
 
-def _auto_role_transform(base: TTFont, src: TTFont, src_glyph_set, role: str) -> tuple[float, float]:
-    base_glyph_set = base.getGlyphSet()
+def _auto_role_transform(base: TTFont, src: TTFont, src_glyph_set, role: str,
+                         base_probes=None, src_probes=None) -> tuple[float, float]:
+    base_probes = base_probes if base_probes is not None else LayoutProbes(base)
+    src_probes = src_probes if src_probes is not None else LayoutProbes(src, src_glyph_set)
     upem_scale = base["head"].unitsPerEm / src["head"].unitsPerEm
-    cjk_shift = cjk_baseline_shift(base, base_glyph_set)
-    cap_factor, cap_shift = cjk_cap_correction(base, base_glyph_set)
-    base_box = _median_flat_extents(base, base_glyph_set, role)
-    src_box = _median_flat_extents(src, src_glyph_set, role)
+    cjk_shift = cjk_baseline_shift(base, probes=base_probes)
+    cap_factor, cap_shift = cjk_cap_correction(base, probes=base_probes)
+    base_box = base_probes.extents(role)
+    src_box = src_probes.extents(role)
     if not base_box or not src_box:
         return upem_scale, cjk_shift
     cjk_shift += cap_shift

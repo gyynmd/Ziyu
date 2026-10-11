@@ -803,6 +803,8 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
         if (mixState.busy || operationBusy) return
         val safeSize = size.coerceIn(-MIX_LATIN_SIZE_LIMIT, MIX_LATIN_SIZE_LIMIT)
         val safeOffset = offset.coerceIn(-MIX_LATIN_OFFSET_LIMIT, MIX_LATIN_OFFSET_LIMIT)
+        if (mixState.latinSize == safeSize && mixState.latinOffset == safeOffset &&
+            mixTunePrefs.contains("latinSize") && mixTunePrefs.contains("latinOffset")) return
         mixState = mixState.copy(latinSize = safeSize, latinOffset = safeOffset)
         mixTunePrefs.edit().putInt("latinSize", safeSize).putInt("latinOffset", safeOffset).apply()
     }

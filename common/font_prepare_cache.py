@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import sys
 
 
@@ -27,15 +28,24 @@ def copy_atomic(source, output):
 def prune(cache_dir, protected=()):
     cache_dir = Path(cache_dir)
     protected = {Path(path) for path in protected}
+    entries = []
+    for cached in cache_dir.glob("*.ttf"):
+        try:
+            info = cached.lstat()
+        except FileNotFoundError:
+            continue  # Another preparation worker may be pruning the same cache.
+        if stat.S_ISREG(info.st_mode):
+            entries.append((info.st_mtime, cached, info.st_size))
     total = 0
-    for cached in sorted(cache_dir.glob("*.ttf"), key=lambda path: path.stat().st_mtime, reverse=True):
-        total += cached.stat().st_size
+    for _, cached, size in sorted(entries, key=lambda entry: entry[0], reverse=True):
+        total += size
         if total > 384 * 1024 * 1024 and cached not in protected:
             cached.unlink(missing_ok=True)
             cached.with_suffix(".json").unlink(missing_ok=True)
 
 
-def prepare(source, output, role, weight, axes, cache_dir, materialize, engine_path, face_selector=None):
+def prepare(source, output, role, weight, axes, cache_dir, materialize, engine_path, face_selector=None,
+            selected_face_materializer=None):
     from fontTools import __version__
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -62,7 +72,10 @@ def prepare(source, output, role, weight, axes, cache_dir, materialize, engine_p
     if report is None:
         temporary = cache_dir / f"{key}.{os.getpid()}.tmp"
         try:
-            report = materialize(Path(source), temporary, role, weight, axes)
+            if face_selector is not None and selected_face_materializer is not None:
+                report = selected_face_materializer(Path(source), temporary, role, weight, axes, face)
+            else:
+                report = materialize(Path(source), temporary, role, weight, axes)
             # A source being replaced during calculation cannot populate the cache.
             if (digest(source) != key_data["source"] or digest(engine_path) != key_data["engine"]
                     or digest(__file__) != key_data["cacheEngine"]):

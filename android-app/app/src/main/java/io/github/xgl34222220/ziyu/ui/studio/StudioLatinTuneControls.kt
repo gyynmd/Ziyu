@@ -9,6 +9,10 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -53,10 +57,13 @@ private fun LatinTuneSlider(
     enabled: Boolean,
     onValue: (Int) -> Unit,
 ) {
-    Text("$label：${if (value > 0) "+" else ""}$value%", modifier = Modifier.padding(top = 12.dp))
+    // Keep drag feedback local; persist the integer value when the gesture ends.
+    var draft by remember(value, enabled) { mutableStateOf(value) }
+    Text("$label：${if (draft > 0) "+" else ""}$draft%", modifier = Modifier.padding(top = 12.dp))
     Slider(
-        value = value.toFloat(),
-        onValueChange = { onValue(it.roundToInt().coerceIn(-limit, limit)) },
+        value = draft.toFloat(),
+        onValueChange = { draft = it.roundToInt().coerceIn(-limit, limit) },
+        onValueChangeFinished = { if (draft != value) onValue(draft) },
         valueRange = -limit.toFloat()..limit.toFloat(),
         steps = limit * 2 - 1,
         enabled = enabled,
