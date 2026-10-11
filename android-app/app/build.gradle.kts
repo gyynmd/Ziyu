@@ -133,6 +133,8 @@ dependencies {
     implementation("dev.chrisbanes.haze:haze-materials:1.6.10")
     // COUI provides the ColorOS theme and navigation components for the COUI appearance.
     implementation("io.github.suqi8.coui.kmp:coui-ui-android:1.1.0")
+    // Use Miuix's own controls for the MIUIx appearance, aligned with blur/squircle.
+    implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.3")
     // Keep Miuix's RuntimeShader backdrop with Haze for API 28-32; it is capability-gated.
     implementation("top.yukonga.miuix.kmp:miuix-blur-android:0.9.3")
     implementation("top.yukonga.miuix.kmp:miuix-squircle-android:0.9.3")

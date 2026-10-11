@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
+import androidx.compose.material3.Slider as MaterialSlider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -15,11 +15,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.xgl34222220.ziyu.MIX_LATIN_OFFSET_LIMIT
 import io.github.xgl34222220.ziyu.MIX_LATIN_SIZE_LIMIT
+import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
+import io.github.xgl34222220.ziyu.ui.theme.LocalUiStyle
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuCard
+import io.github.suqi8.coui.kmp.basic.Slider as CouiSlider
+import top.yukonga.miuix.kmp.basic.Slider as MiuixSlider
+import top.yukonga.miuix.kmp.basic.SliderDefaults as MiuixSliderDefaults
 import kotlin.math.roundToInt
 
 @Composable
@@ -60,13 +69,75 @@ private fun LatinTuneSlider(
     // Keep drag feedback local; persist the integer value when the gesture ends.
     var draft by remember(value, enabled) { mutableStateOf(value) }
     Text("$label：${if (draft > 0) "+" else ""}$draft%", modifier = Modifier.padding(top = 12.dp))
-    Slider(
-        value = draft.toFloat(),
-        onValueChange = { draft = it.roundToInt().coerceIn(-limit, limit) },
-        onValueChangeFinished = { if (draft != value) onValue(draft) },
-        valueRange = -limit.toFloat()..limit.toFloat(),
-        steps = limit * 2 - 1,
-        enabled = enabled,
-    )
+    val onDraftChange: (Float) -> Unit = {
+        if (enabled) draft = it.roundToInt().coerceIn(-limit, limit)
+    }
+    val onFinished: () -> Unit = { if (enabled && draft != value) onValue(draft) }
+    val range = -limit.toFloat()..limit.toFloat()
+    val steps = limit * 2 - 1
+    // Library accessibility actions don't finish a drag. Commit those actions
+    // directly and enforce the same disabled/whole-percent rules as touch.
+    val sliderModifier = Modifier.fillMaxWidth().semantics {
+        contentDescription = label
+        if (!enabled) disabled()
+        setProgress { target ->
+            if (!enabled || !target.isFinite()) {
+                false
+            } else {
+                val next = target.roundToInt().coerceIn(-limit, limit)
+                if (next == draft) {
+                    false
+                } else {
+                    draft = next
+                    onValue(next)
+                    true
+                }
+            }
+        }
+    }
+    when (LocalUiStyle.current) {
+        UiStyle.MATERIAL -> MaterialSlider(
+            value = draft.toFloat(),
+            onValueChange = onDraftChange,
+            onValueChangeFinished = onFinished,
+            modifier = sliderModifier,
+            valueRange = range,
+            steps = steps,
+            enabled = enabled,
+        )
+        UiStyle.MIUIX -> {
+            // The surrounding page uses Ziyu's dynamic Material palette. Supply
+            // all colors so the library slider follows it in light/dark modes.
+            val scheme = MaterialTheme.colorScheme
+            MiuixSlider(
+                value = draft.toFloat(),
+                onValueChange = onDraftChange,
+                onValueChangeFinished = onFinished,
+                modifier = sliderModifier.padding(vertical = 14.dp),
+                valueRange = range,
+                steps = steps,
+                enabled = enabled,
+                colors = MiuixSliderDefaults.sliderColors(
+                    foregroundColor = scheme.primary,
+                    disabledForegroundColor = scheme.onSurface.copy(alpha = .12f),
+                    backgroundColor = scheme.surfaceContainerHighest,
+                    disabledBackgroundColor = scheme.onSurface.copy(alpha = .08f),
+                    thumbColor = scheme.onPrimary,
+                    disabledThumbColor = scheme.onSurface.copy(alpha = .38f),
+                    keyPointColor = scheme.onSurfaceVariant,
+                    keyPointForegroundColor = scheme.onPrimary,
+                ),
+            )
+        }
+        UiStyle.COUI -> CouiSlider(
+            value = draft.toFloat(),
+            onValueChange = onDraftChange,
+            onValueChangeFinished = onFinished,
+            modifier = sliderModifier.padding(vertical = 14.dp),
+            valueRange = range,
+            steps = steps,
+            enabled = enabled,
+        )
+    }
     Text(hint, style = MaterialTheme.typography.bodySmall)
 }

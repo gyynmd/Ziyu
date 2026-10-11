@@ -40,12 +40,18 @@
 
 ## Miuix 与 AndroidLiquidGlass
 
-- 用途：Android 13 及以上悬浮底栏的背景取样、RuntimeShader 模糊与折射、边缘高光和平滑连续圆角。
+- 用途：Android 13 及以上悬浮底栏的背景取样、RuntimeShader 模糊与折射、边缘高光和平滑连续圆角；MIUIx 英数微调使用 `miuix-ui-android:0.9.3` 的官方 Slider。
 - 来源：[`compose-miuix-ui/miuix`](https://github.com/compose-miuix-ui/miuix)；折射透镜按其官方示例改写，该示例注明源自 [`Kyant0/AndroidLiquidGlass`](https://github.com/Kyant0/AndroidLiquidGlass)。
 - 许可证：Apache License 2.0。
 - 完整文本：[`licenses/Apache-2.0.txt`](licenses/Apache-2.0.txt)。
 
 字域修改了示例的包名、配色、分层、尺寸和导航状态接入；底层库及原示例的许可证与署名不变。
+
+## COUI
+
+- 用途：COUI 风格的主题、导航组件与英数微调 Slider，依赖 `io.github.suqi8.coui.kmp:coui-ui-android:1.1.0`。
+- 来源：[`suqi8/coui`](https://github.com/suqi8/coui)。组件直接调用库 API，未复制组件实现。
+- 许可证：Apache License 2.0。完整文本：[`licenses/Apache-2.0.txt`](licenses/Apache-2.0.txt)。
 
 ## KernelSU 悬浮底栏
 
