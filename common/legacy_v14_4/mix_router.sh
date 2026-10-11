@@ -27,6 +27,7 @@ REBOOT_CONF="$REALMOD/config/text_reboot_required.conf"
 LOG_FILE="$REALMOD/logs/fontswitch.log"
 FINALIZE_LOCK="$REALMOD/.mix-stage-finalize.lock"
 [ -f "$LEGACY/payload_clone.sh" ] && . "$LEGACY/payload_clone.sh"
+. "$REALMOD/common/composite_tune.sh" || exit 126
 
 read_value() {
     sed -n "s/^${2}=//p" "$1" 2>/dev/null | head -n1 | tr -d '\r\n'
@@ -89,12 +90,15 @@ mix_config_json_fast() {
     [ -n "$_cjk_axes" ] || _cjk_axes="wght=$_cjk_weight"
     [ -n "$_latin_axes" ] || _latin_axes="wght=$_latin_weight"
     [ -n "$_digit_axes" ] || _digit_axes="wght=$_digit_weight"
+    _latin_size=$(composite_tune_clamp "$(read_value "$_source" latinSize)" 15)
+    _latin_offset=$(composite_tune_clamp "$(read_value "$_source" latinOffset)" 10)
     _enabled=false
     [ "$(head -n1 "$ACTIVE_CONF" 2>/dev/null | tr -d '\r\n')" = mix ] && _enabled=true
-    printf '{"status":"ok","data":{"enabled":%s,"cjk":"%s","latin":"%s","digit":"%s","cjkWeight":%s,"latinWeight":%s,"digitWeight":%s,"cjkAxes":"%s","latinAxes":"%s","digitAxes":"%s"}}\n' \
+    printf '{"status":"ok","data":{"enabled":%s,"cjk":"%s","latin":"%s","digit":"%s","cjkWeight":%s,"latinWeight":%s,"digitWeight":%s,"cjkAxes":"%s","latinAxes":"%s","digitAxes":"%s","manualTuneSupported":true,"latinSize":%s,"latinOffset":%s}}\n' \
         "$_enabled" "$(json_escape_router "$_cjk")" "$(json_escape_router "$_latin")" "$(json_escape_router "$_digit")" \
         "$_cjk_weight" "$_latin_weight" "$_digit_weight" \
-        "$(json_escape_router "$_cjk_axes")" "$(json_escape_router "$_latin_axes")" "$(json_escape_router "$_digit_axes")"
+        "$(json_escape_router "$_cjk_axes")" "$(json_escape_router "$_latin_axes")" "$(json_escape_router "$_digit_axes")" \
+        "$_latin_size" "$_latin_offset"
 }
 
 # Reconcile only the detached axes controller used by the App. Its PID sidecars
@@ -314,6 +318,8 @@ prepare_mix_stage() {
         printf 'cjkAxes=%s\nlatinAxes=%s\ndigitAxes=%s\n' "$4" "$5" "$6"
         printf 'mixName=%s\npublicRoot=%s\n' "${7:-}" "${LUOSHU_PUBLIC_DIR:-/sdcard/LuoShu}"
         printf 'cjkName=%s\nlatinName=%s\ndigitName=%s\n' "${8:-}" "${9:-}" "${10:-}"
+        printf 'latinSize=%s\nlatinOffset=%s\n' \
+            "$(composite_tune_clamp "${11:-0}" 15)" "$(composite_tune_clamp "${12:-0}" 10)"
         printf 'previousFont=%s\n' "$_previous"
         printf 'previousLegacy=%s\n' "$_previous_legacy"
         printf 'time=%s\n' "$(date +%s 2>/dev/null || echo 0)"
@@ -337,6 +343,12 @@ stage_generation_matches() {
     [ "$(read_value "$MIX_MANIFEST" requestId)" = "$_request" ] || return 1
     for _field in cjk latin digit; do
         [ "$(read_value "$MIX_MANIFEST" "$_field")" = "$(read_value "$MIX_STAGE_STATE" "$_field")" ] || return 1
+    done
+    # Older stages had no tuning fields. Missing values continue to mean zero.
+    for _field in latinSize latinOffset; do
+        _stage_tune=$(read_value "$MIX_STAGE_STATE" "$_field")
+        _manifest_tune=$(read_value "$MIX_MANIFEST" "$_field")
+        [ "${_stage_tune:-0}" = "${_manifest_tune:-0}" ] || return 1
     done
     [ -n "$(read_value "$MIX_MANIFEST" compositeHash)" ] || return 1
     return 0
@@ -546,6 +558,7 @@ setup_runtime() {
     [ ! -f "$REALMOD/common/font_prepare_cache.py" ] || force_link "$REALMOD/common/font_prepare_cache.py" "$RUNTIME/common/font_prepare_cache.py" || return 1
     force_link "$LEGACY/composite_font.py" "$RUNTIME/common/composite_font.py" || return 1
     force_link "$LEGACY/composite_layout.py" "$RUNTIME/common/composite_layout.py" || return 1
+    force_link "$REALMOD/common/composite_tune.sh" "$RUNTIME/common/composite_tune.sh" || return 1
     force_link "$REALMOD/common/luoshu_composite.sh" "$RUNTIME/common/luoshu_composite.sh" || return 1
     force_link "$LEGACY/mix_weight_mode.sh" "$RUNTIME/common/mix_weight_mode.sh" || return 1
     force_link "$REALMOD/common/font_role_check.sh" "$RUNTIME/common/font_role_check.sh" || return 1
@@ -628,7 +641,7 @@ case "$_cmd" in
             printf '{"status":"error","message":"组合名称无效，或保存字体库组件不可用"}\n'
             exit 2
         fi
-        prepare_mix_stage "$2" "$3" "$4" "${5:-wght=400}" "${6:-wght=400}" "${7:-wght=400}" "${8:-}" "${9:-}" "${10:-}" "${11:-}" || {
+        prepare_mix_stage "$2" "$3" "$4" "${5:-wght=400}" "${6:-wght=400}" "${7:-wght=400}" "${8:-}" "${9:-}" "${10:-}" "${11:-}" "${12:-0}" "${13:-0}" || {
             printf '{"status":"error","message":"无法创建复合字体生成暂存目录"}\n'
             exit 1
         }
@@ -654,6 +667,8 @@ export LUOSHU_MIX_MANIFEST="$MIX_MANIFEST"
 export LUOSHU_MIX_EXPECTED_CJK="$(read_value "$MIX_STAGE_STATE" cjk)"
 export LUOSHU_MIX_EXPECTED_LATIN="$(read_value "$MIX_STAGE_STATE" latin)"
 export LUOSHU_MIX_EXPECTED_DIGIT="$(read_value "$MIX_STAGE_STATE" digit)"
+export LUOSHU_MIX_LATIN_SIZE="$(read_value "$MIX_STAGE_STATE" latinSize)"
+export LUOSHU_MIX_LATIN_OFFSET="$(read_value "$MIX_STAGE_STATE" latinOffset)"
 export MODDIR="$RUNTIME"
 export MODULE_DIR="$RUNTIME"
 

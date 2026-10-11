@@ -54,6 +54,7 @@ internal fun FontStudioRoute(
             updateFont = studioViewModel::updateMixFont,
             updateWeight = { slot, weight -> latestActions.updateWeight(slot, weight) },
             updateAxis = { slot, tag, value -> latestActions.updateAxis(slot, tag, value) },
+            updateTune = { size, offset -> latestActions.updateTune(size, offset) },
             inspectCoverage = { latestActions.inspectCoverage(it) },
             startMix = {
                 mixName = ""
@@ -64,7 +65,7 @@ internal fun FontStudioRoute(
         )
     }
 
-    LaunchedEffect(state.loading, state.fonts, state.slots) {
+    LaunchedEffect(state.loading, state.fonts, state.slots, state.latinSize, state.latinOffset) {
         if (!state.loading && state.slots.all { it.font != null }) {
             profileBridge.saveCurrent(encodeStudioProfile(state))
         }

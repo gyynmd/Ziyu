@@ -208,7 +208,10 @@ def materialize(source: Path, output: Path, role: str, requested_weight: int, re
             options = subset.Options()
             options.drop_tables.append("SVG")
             role_subset = subset.Subsetter(options=options)
-            role_subset.populate(unicodes=(latin | digits) if role == "latin" else digits)
+            # Both donor roles retain the same small alphabet. This allows one
+            # selected face/axis instance to serve letters and digits while the
+            # composite builder still imports only the requested codepoints.
+            role_subset.populate(unicodes=latin | digits)
             role_subset.subset(font)
         if variable:
             known_axes = {str(axis.axisTag): axis for axis in font["fvar"].axes}
@@ -278,11 +281,13 @@ def main() -> int:
     args = None
     try:
         args = parse_args()
+        axis_spec = parse_axis_spec(args.axes)
+        requested_weight = clamp_weight(axis_spec.get("wght", args.weight))
         cache_dir = os.environ.get("LUOSHU_PREPARE_CACHE", "")
         if cache_dir:
             from font_prepare_cache import prepare
-            result = prepare(Path(args.input), Path(args.output), args.role, args.weight,
-                             parse_axis_spec(args.axes), Path(cache_dir), materialize, Path(__file__))
+            result = prepare(Path(args.input), Path(args.output), args.role, requested_weight,
+                             axis_spec, Path(cache_dir), materialize, Path(__file__), pick_face)
         else:
             result = materialize(Path(args.input), Path(args.output), args.role, args.weight, parse_axis_spec(args.axes))
         print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))

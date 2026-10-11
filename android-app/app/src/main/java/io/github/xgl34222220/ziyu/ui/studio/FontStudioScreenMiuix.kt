@@ -89,6 +89,7 @@ internal fun FontStudioScreenMiuix(
     ) {
         item { MiuixStudioHeader(state.loading, actions.refresh, topAction) }
         item { MiuixCompositionMap(state, actions) }
+        item { StudioLatinTuneControls(state, actions) }
 
         if (state.loading) {
             item { LinearProgressIndicator(Modifier.fillMaxWidth().height(4.dp)) }

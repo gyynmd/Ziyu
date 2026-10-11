@@ -40,6 +40,7 @@ LAST_MIX_ERROR=""
 [ -f "$MODDIR/common/font_check.sh" ] && . "$MODDIR/common/font_check.sh"
 [ -f "$MODDIR/common/rom_adapters.sh" ] && . "$MODDIR/common/rom_adapters.sh"
 [ -f "$MODDIR/common/mount_compat.sh" ] && . "$MODDIR/common/mount_compat.sh"
+. "$MODDIR/common/composite_tune.sh" || exit 126
 
 type check_coloros >/dev/null 2>&1 && check_coloros
 type check_hyperos >/dev/null 2>&1 && check_hyperos
@@ -291,6 +292,25 @@ composite_hash_file() {
     fi
 }
 
+composite_engine_identity() (
+    _cei_layout="$MODDIR/common/composite_layout.py"
+    [ -f "$_cei_layout" ] || _cei_layout="$MODDIR/common/legacy_v14_4/composite_layout.py"
+    for _cei_file in "$MODDIR/common/composite_font.py" "$_cei_layout" \
+        "$MODDIR/common/luoshu_composite.sh" "$MODDIR/common/composite_tune.sh"; do
+        [ -s "$_cei_file" ] || return 1
+        _cei_hash=$(composite_hash_file "$_cei_file")
+        [ -n "$_cei_hash" ] || return 1
+        printf '%s\n' "$_cei_hash"
+    done
+)
+
+composite_sources_unchanged() {
+    [ "$(composite_hash_file "$_cjk_src")" = "$COMPOSITE_CJK_HASH" ] &&
+    [ "$(composite_hash_file "$_latin_src")" = "$COMPOSITE_LATIN_HASH" ] &&
+    [ "$(composite_hash_file "$_digit_src")" = "$COMPOSITE_DIGIT_HASH" ] &&
+    [ "$(composite_engine_identity)" = "$_engine_identity" ]
+}
+
 set_mix_error() {
     LAST_MIX_ERROR="$1"
     printf '%s\n' "$LAST_MIX_ERROR" > "$CONFIG_DIR/mix_last_error.txt" 2>/dev/null || true
@@ -356,7 +376,7 @@ prune_composite_cache() {
         _total_kb=$((_total_kb + _size_kb))
         [ "$_count" -le "$_keep" ] && [ "$_total_kb" -le "$_max_kb" ] && continue
         _base=${_old%.otf}
-        rm -f "$_old" "${_base}.json" 2>/dev/null || true
+        rm -f "$_old" "${_base}.json" "${_old}.sha256" 2>/dev/null || true
     done
     rm -f "$_cache"/.*.tmp.* 2>/dev/null || true
 }
@@ -376,36 +396,60 @@ build_composite_file() {
     COMPOSITE_CJK_HASH="$_cjk_hash"
     COMPOSITE_LATIN_HASH="$_latin_hash"
     COMPOSITE_DIGIT_HASH="$_digit_hash"
-    _key_src="${_cjk_hash}-${_latin_hash}-${_digit_hash}-full-composite-v7-metrics"
+    [ -n "$_cjk_hash" ] && [ -n "$_latin_hash" ] && [ -n "$_digit_hash" ] || {
+        set_mix_error '无法读取组合源字体摘要'; return 1;
+    }
+    composite_tune_load
+    _engine_identity=$(composite_engine_identity) || { set_mix_error '复合字体引擎不完整'; return 1; }
+    _key_src="${_cjk_hash}-${_latin_hash}-${_digit_hash}-$_engine_identity$(composite_tune_key_suffix)-full-composite-v8"
     _key=$(printf '%s' "$_key_src" | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; elif command -v toybox >/dev/null 2>&1; then toybox sha256sum; else cksum; fi; } | awk '{print $1}')
     _cached="$_cache/${_key}.otf"; _report="$_cache/${_key}.json"; _progress="$CONFIG_DIR/composite_progress.json"
+    _receipt="${_cached}.sha256"
     rm -f "$_cache"/.*.tmp.* 2>/dev/null || true
-    if [ -s "$_cached" ]; then
+    _cache_digest=$(composite_hash_file "$_cached" 2>/dev/null)
+    _cache_expected=$(head -n1 "$_receipt" 2>/dev/null | tr -d '\r\n')
+    if [ -s "$_cached" ] && [ ! -L "$_cached" ] && [ ! -L "$_receipt" ] && \
+       [ -n "$_cache_expected" ] && [ "$_cache_digest" = "$_cache_expected" ] && \
+       font_validate "$_cached" text; then
+        _cache_verified=true
+    else
+        _cache_verified=false
+        rm -f "$_cached" "$_report" "$_receipt" 2>/dev/null || {
+            set_mix_error '无法清理未通过校验的组合缓存'; return 1;
+        }
+    fi
+    if [ "$_cache_verified" = true ]; then
         COMPOSITE_CACHE_HIT=true
         touch "$_cached" "$_report" 2>/dev/null || true
         write_progress cache '已验证并使用现有复合字体缓存' 100
-    elif [ -n "$_cjk_hash" ] && [ "$_cjk_hash" = "$_latin_hash" ] && [ "$_cjk_hash" = "$_digit_hash" ]; then
+    elif [ "$_cjk_hash" = "$_latin_hash" ] && [ "$_cjk_hash" = "$_digit_hash" ] && \
+         [ "$COMPOSITE_TUNE_SIZE" = 0 ] && [ "$COMPOSITE_TUNE_OFFSET" = 0 ] && \
+         [ "$(font_detect_format "$_cjk_src")" != TTC ]; then
         # Selecting one complete font for all three roles needs no glyph rewrite.
         # Reuse the validated source directly instead of serializing the entire CJK
         # font through embedded Python.
-        ln "$_cjk_src" "$_cached" 2>/dev/null || cp -f "$_cjk_src" "$_cached" 2>/dev/null || {
+        cp -f "$_cjk_src" "$_cached" 2>/dev/null || {
             set_mix_error '无法保存同源复合字体缓存'
             return 1
         }
         chmod 0644 "$_cached" 2>/dev/null || true
+        composite_sources_unchanged && font_validate "$_cached" text || {
+            rm -f "$_cached"; set_mix_error '同源字体在准备过程中发生变化或校验失败'; return 1;
+        }
+        composite_hash_file "$_cached" >"$_receipt" || return 1
         printf '{"status":"ok","fastPath":"same-source"}\n' >"$_report" 2>/dev/null || true
         write_progress cache '三项字体来源相同，已跳过重复合成' 100
     else
         _tmp="$_cache/.${_key}.$$.tmp.otf"; _tmp_report="$_cache/.${_key}.$$.tmp.json"; _tmp_error="$_cache/.${_key}.$$.tmp.err"
         rm -f "$_tmp" "$_tmp_report" "$_tmp_error" "$_progress" 2>/dev/null || true
         if command -v timeout >/dev/null 2>&1; then
-            MODDIR="$MODDIR" timeout 480 sh "$_runner" --cjk "$_cjk_src" --latin "$_latin_src" --digit "$_digit_src" --output "$_tmp" --progress "$_progress" > "$_tmp_report" 2> "$_tmp_error"
+            MODDIR="$MODDIR" timeout 480 sh "$_runner" --cjk "$_cjk_src" --latin "$_latin_src" --digit "$_digit_src" --output "$_tmp" --progress "$_progress" --latin-size "$COMPOSITE_TUNE_SIZE" --latin-offset "$COMPOSITE_TUNE_OFFSET" > "$_tmp_report" 2> "$_tmp_error"
             _run_rc=$?
         elif command -v toybox >/dev/null 2>&1 && toybox timeout --help >/dev/null 2>&1; then
-            MODDIR="$MODDIR" toybox timeout 480 sh "$_runner" --cjk "$_cjk_src" --latin "$_latin_src" --digit "$_digit_src" --output "$_tmp" --progress "$_progress" > "$_tmp_report" 2> "$_tmp_error"
+            MODDIR="$MODDIR" toybox timeout 480 sh "$_runner" --cjk "$_cjk_src" --latin "$_latin_src" --digit "$_digit_src" --output "$_tmp" --progress "$_progress" --latin-size "$COMPOSITE_TUNE_SIZE" --latin-offset "$COMPOSITE_TUNE_OFFSET" > "$_tmp_report" 2> "$_tmp_error"
             _run_rc=$?
         else
-            MODDIR="$MODDIR" sh "$_runner" --cjk "$_cjk_src" --latin "$_latin_src" --digit "$_digit_src" --output "$_tmp" --progress "$_progress" > "$_tmp_report" 2> "$_tmp_error"
+            MODDIR="$MODDIR" sh "$_runner" --cjk "$_cjk_src" --latin "$_latin_src" --digit "$_digit_src" --output "$_tmp" --progress "$_progress" --latin-size "$COMPOSITE_TUNE_SIZE" --latin-offset "$COMPOSITE_TUNE_OFFSET" > "$_tmp_report" 2> "$_tmp_error"
             _run_rc=$?
         fi
         [ ! -s "$_tmp_error" ] || cat "$_tmp_error" >> "$LOG_FILE" 2>/dev/null || true
@@ -422,11 +466,17 @@ build_composite_file() {
             return 1
         fi
         chmod 0644 "$_tmp" "$_tmp_report" 2>/dev/null || true
+        if ! composite_sources_unchanged; then
+            rm -f "$_tmp" "$_tmp_report" "$_tmp_error"
+            set_mix_error '字体源文件或引擎在生成过程中发生变化，请重新生成'; return 1
+        fi
         mv -f "$_tmp" "$_cached" || { set_mix_error '无法保存复合字体缓存'; return 1; }
         mv -f "$_tmp_report" "$_report" 2>/dev/null || true
+        composite_hash_file "$_cached" >"$_receipt" || return 1
         rm -f "$_tmp_error" 2>/dev/null || true
         write_progress done '复合字体已生成并通过验证' 100
     fi
+    composite_sources_unchanged || { set_mix_error '组合源字体发生变化，请重新生成'; return 1; }
     prune_composite_cache "$_cache"
     COMPOSITE_RESULT="$_cached"; COMPOSITE_REPORT="$_report"
     COMPOSITE_OUTPUT_HASH=$(composite_hash_file "$_cached")
@@ -449,6 +499,7 @@ write_mix_generation_manifest() {
         printf 'cjkHash=%s\nlatinHash=%s\ndigitHash=%s\n' \
             "$COMPOSITE_CJK_HASH" "$COMPOSITE_LATIN_HASH" "$COMPOSITE_DIGIT_HASH"
         printf 'compositeHash=%s\n' "$COMPOSITE_OUTPUT_HASH"
+        printf 'latinSize=%s\nlatinOffset=%s\n' "$COMPOSITE_TUNE_SIZE" "$COMPOSITE_TUNE_OFFSET"
         printf 'time=%s\n' "$(date +%s 2>/dev/null || echo 0)"
     } >"$_tmp" 2>/dev/null || return 1
     mv -f "$_tmp" "$_manifest" 2>/dev/null || return 1
@@ -466,6 +517,7 @@ prepare_mix_config() {
         printf 'composite=true\n'
         printf 'xmlOverlay=false\n'
         printf 'cacheHit=%s\n' "$COMPOSITE_CACHE_HIT"
+        printf 'latinSize=%s\nlatinOffset=%s\n' "$COMPOSITE_TUNE_SIZE" "$COMPOSITE_TUNE_OFFSET"
         printf 'time=%s\n' "$(date +%s)"
     } > "$_font_tmp" 2>/dev/null || return 1
     printf 'mix\n' > "$_active_tmp" 2>/dev/null || return 1

@@ -591,7 +591,7 @@ case "${1:-status}" in
     delete) manager_ready || exit 1; sh "$FONT_MANAGER" action delete "${2:-}" ;;
     delete_many) manager_ready || exit 1; shift; sh "$FONT_MANAGER" action delete_many "$@" ;;
     mix_config) mix_ready || exit 1; sh "$MIX_ENGINE" config ;;
-    mix_start) mix_ready || exit 1; sh "$MIX_ENGINE" start "${2:-}" "${3:-}" "${4:-}" "${5:-wght=400}" "${6:-wght=400}" "${7:-wght=400}" "${8:-}" "${9:-}" "${10:-}" "${11:-}" ;;
+    mix_start) mix_ready || exit 1; sh "$MIX_ENGINE" start "${2:-}" "${3:-}" "${4:-}" "${5:-wght=400}" "${6:-wght=400}" "${7:-wght=400}" "${8:-}" "${9:-}" "${10:-}" "${11:-}" "${12:-0}" "${13:-0}" ;;
     mix_status) mix_ready || exit 1; sh "$MIX_ENGINE" status "${2:-}" ;;
     temporary_root)
         case "${2:-status}" in

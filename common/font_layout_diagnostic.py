@@ -44,6 +44,14 @@ METRIC_FIELDS = {
             "winAscent", "winDescent"),
 }
 COVERAGE_FIELDS = ("hasHan", "hasLatin", "hanCount", "latinCount", "unicodeCount", "cjkPunctuation")
+# Prioritize routes present on this ROM over payload-only aliases.
+LATIN_ROUTE_NAMES = frozenset({
+    "misansvf_overlay.ttf", "misanslatinvf.ttf", "roboto-regular.ttf", "robotostatic-regular.ttf",
+    "robotoflex-regular.ttf", "googlesans-regular.ttf", "googlesanstext-regular.ttf",
+    "syssans-en-regular.ttf", "sysfont-regular.ttf", "droidsans.ttf",
+})
+ROUTE_TARGET = re.compile(r"/(?:(?:system|system_ext|product|vendor|odm|oem|mi_ext|my_product|hw_product|cust)/fonts"
+                          r"|data/system/fonts/theme_webview|data/system/theme/fonts)/[A-Za-z0-9_.+-]{1,120}")
 CJK_ROUTING_REASONS = {"stock-coverage-refresh-pending", "specialized-slot", "stock-han-slot",
                        "not-latin-ui-slot", "no-staged-cjk-fallback", "stock-latin-primary"}
 
@@ -260,10 +268,15 @@ class Collector:
                                 candidates.add(key)
                 except OSError:
                     continue
+        def present(key: str) -> bool:
+            return key in self.data.get("slots", {}) or os.path.lexists(self.physical(key))
+
         def priority(key: str) -> tuple:
             name = PurePosixPath(key).name.lower()
             regular = not any(word in name for word in ("bold", "italic", "thin", "light", "black"))
-            return (0 if "clock" in name else 1 if regular else 2,
+            on_rom = present(key)
+            return (0 if on_rom and name in LATIN_ROUTE_NAMES else 1 if on_rom else 2,
+                    0 if "clock" in name else 1 if regular else 2,
                     0 if key.startswith("/system/") else 1, key)
         main = self.report["inventory"].get("mainSlot")
         extra = sorted((key for key in candidates if key != main), key=priority)
@@ -325,8 +338,24 @@ class Collector:
                               "glyphs": {"status": "not-collected"}}
         item["activePayload"] = self.reference(self.module / ".luoshu-payload" / logical.lstrip("/"), face)
         item["mountedInCollector"] = self.reference(self.physical(logical), face)
+        route = self.route(logical)
+        if route:
+            item["mountedRoute"] = route
         if entry:
             item["stock"]["glyphs"] = self.stock_glyphs(logical, face)
+
+    def route(self, logical: str) -> dict | None:
+        """Describe the collector's symlink route using allowlisted locations."""
+        path = self.physical(logical)
+        if not path.is_symlink():
+            return None
+        try:
+            resolved = Path(os.path.realpath(path))
+            relative = "/" + resolved.relative_to(self.fs_root.resolve()).as_posix()
+        except (OSError, ValueError):
+            return {"status": "symlink", "target": "other"}
+        return {"status": "symlink", "target": relative if ROUTE_TARGET.fullmatch(relative) else "other",
+                "targetIsRegularFile": resolved.is_file() and not resolved.is_symlink()}
 
     def processing_report(self) -> dict:
         try:

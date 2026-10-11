@@ -36,6 +36,9 @@ internal data class FontStudioUiState(
     val coverage: CoverageProbeState = CoverageProbeState(),
     val directApplyFontId: String? = null,
     val hasFonts: Boolean = false,
+    val latinSize: Int = 0,
+    val latinOffset: Int = 0,
+    val manualTuneSupported: Boolean = false,
 )
 
 @Immutable
@@ -49,6 +52,7 @@ internal data class FontStudioActions(
     val startMix: (String) -> Unit,
     val applyDirect: (String) -> Unit,
     val cancel: () -> Unit = {},
+    val updateTune: (Int, Int) -> Unit = { _, _ -> },
 )
 
 internal fun ZiyuViewModel.toFontStudioUiState(features: Alpha15FeatureViewModel): FontStudioUiState {
@@ -89,5 +93,8 @@ internal fun ZiyuViewModel.toFontStudioUiState(features: Alpha15FeatureViewModel
         // Studio applications always create one named result using the selected weights.
         directApplyFontId = null,
         hasFonts = fonts.isNotEmpty(),
+        latinSize = current.latinSize,
+        latinOffset = current.latinOffset,
+        manualTuneSupported = current.manualTuneSupported,
     )
 }

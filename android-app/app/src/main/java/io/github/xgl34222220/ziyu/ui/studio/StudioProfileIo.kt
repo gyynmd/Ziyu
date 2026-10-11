@@ -65,6 +65,8 @@ internal data class StudioProfileSlot(
 internal data class StudioProfile(
     val name: String,
     val slots: Map<MixSlot, StudioProfileSlot>,
+    val latinSize: Int = 0,
+    val latinOffset: Int = 0,
 )
 
 @Immutable
@@ -102,6 +104,8 @@ internal fun encodeStudioProfile(state: FontStudioUiState): String {
         .put("name", "字域组合方案")
         .put("createdAt", System.currentTimeMillis())
         .put("slots", slots)
+        .put("latinSize", state.latinSize.coerceIn(-15, 15))
+        .put("latinOffset", state.latinOffset.coerceIn(-10, 10))
         .toString(2)
 }
 
@@ -167,12 +171,15 @@ internal fun parseStudioProfile(
         profile = StudioProfile(
             name = root.optString("name", "导入方案").ifBlank { "导入方案" },
             slots = parsedSlots,
+            latinSize = root.optInt("latinSize", 0).coerceIn(-15, 15),
+            latinOffset = root.optInt("latinOffset", 0).coerceIn(-10, 10),
         ),
         warnings = warnings.distinct(),
     )
 }
 
 internal fun applyStudioProfile(profile: StudioProfile, actions: FontStudioActions) {
+    actions.updateTune(profile.latinSize, profile.latinOffset)
     MixSlot.entries.forEach { slot ->
         val config = profile.slots[slot] ?: return@forEach
         actions.updateFont(slot, config.fontId)

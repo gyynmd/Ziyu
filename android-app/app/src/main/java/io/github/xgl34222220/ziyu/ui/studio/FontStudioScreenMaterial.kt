@@ -82,6 +82,7 @@ internal fun FontStudioScreenMaterial(
     ) {
         item { MaterialStudioHeader(state.loading, actions.refresh, topAction) }
         item { MaterialCompositionOverview(state, actions) }
+        item { StudioLatinTuneControls(state, actions) }
 
         if (state.loading) {
             item { LinearProgressIndicator(Modifier.fillMaxWidth().height(4.dp)) }

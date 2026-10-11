@@ -234,6 +234,7 @@ internal fun ZiyuAppShell(
             pickSlot = { pickerSlot = it },
             updateWeight = viewModel::updateMixWeight,
             updateAxis = viewModel::updateMixAxis,
+            updateTune = viewModel::updateMixTune,
             inspectCoverage = features::inspectCoverage,
             startMix = viewModel::startMix,
             applyDirect = viewModel::applyFont,

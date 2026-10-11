@@ -150,6 +150,9 @@ internal data class FontItem(
 
 internal enum class MixSlot { Cjk, Latin, Digit }
 
+internal const val MIX_LATIN_SIZE_LIMIT = 15
+internal const val MIX_LATIN_OFFSET_LIMIT = 10
+
 internal data class MixState(
     val loading: Boolean = false,
     val cjk: String = "",
@@ -161,6 +164,9 @@ internal data class MixState(
     val cjkAxes: Map<String, Float> = mapOf("wght" to 400f),
     val latinAxes: Map<String, Float> = mapOf("wght" to 400f),
     val digitAxes: Map<String, Float> = mapOf("wght" to 400f),
+    val latinSize: Int = 0,
+    val latinOffset: Int = 0,
+    val manualTuneSupported: Boolean = false,
     val enabled: Boolean = false,
     val busy: Boolean = false,
     val taskId: String = "",
@@ -180,6 +186,7 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
     private val fingerprintBridge = "/data/adb/modules/LuoShu/common/font_library_cache.sh"
     private val fontIndexStore = FontIndexStore(application)
     private val completionPrefs = application.getSharedPreferences("combination-completion", 0)
+    private val mixTunePrefs = application.getSharedPreferences("combination-tune", 0)
     private var restartJob: Job? = null
     private var restoredCombinationTask = ""
     private val mountPreferenceMutex = Mutex()
@@ -467,7 +474,10 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
         requestDeviceReboot(softReboot = true)
     }
 
-    var mixState by mutableStateOf(MixState())
+    var mixState by mutableStateOf(MixState(
+        latinSize = mixTunePrefs.getInt("latinSize", 0).coerceIn(-MIX_LATIN_SIZE_LIMIT, MIX_LATIN_SIZE_LIMIT),
+        latinOffset = mixTunePrefs.getInt("latinOffset", 0).coerceIn(-MIX_LATIN_OFFSET_LIMIT, MIX_LATIN_OFFSET_LIMIT),
+    ))
         private set
 
     private val cacheLoadJob = viewModelScope.launch {
@@ -728,6 +738,11 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
                     cjkAxes = parseAxes(data.optString("cjkAxes"), cjkWeight),
                     latinAxes = parseAxes(data.optString("latinAxes"), latinWeight),
                     digitAxes = parseAxes(data.optString("digitAxes"), digitWeight),
+                    manualTuneSupported = data.optBoolean("manualTuneSupported", false),
+                    latinSize = (if (mixTunePrefs.contains("latinSize")) mixState.latinSize
+                        else data.optInt("latinSize", 0)).coerceIn(-MIX_LATIN_SIZE_LIMIT, MIX_LATIN_SIZE_LIMIT),
+                    latinOffset = (if (mixTunePrefs.contains("latinOffset")) mixState.latinOffset
+                        else data.optInt("latinOffset", 0)).coerceIn(-MIX_LATIN_OFFSET_LIMIT, MIX_LATIN_OFFSET_LIMIT),
                     message = if (data.optBoolean("enabled", false)) "当前正在使用复合字体" else "可直接生成新的复合字体",
                     error = "",
                 )
@@ -784,8 +799,20 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    fun updateMixTune(size: Int, offset: Int) {
+        if (mixState.busy || operationBusy) return
+        val safeSize = size.coerceIn(-MIX_LATIN_SIZE_LIMIT, MIX_LATIN_SIZE_LIMIT)
+        val safeOffset = offset.coerceIn(-MIX_LATIN_OFFSET_LIMIT, MIX_LATIN_OFFSET_LIMIT)
+        mixState = mixState.copy(latinSize = safeSize, latinOffset = safeOffset)
+        mixTunePrefs.edit().putInt("latinSize", safeSize).putInt("latinOffset", safeOffset).apply()
+    }
+
     fun startMix(name: String) {
         if (mixState.busy || operationBusy) return
+        if (!mixState.manualTuneSupported && (mixState.latinSize != 0 || mixState.latinOffset != 0)) {
+            mixState = mixState.copy(error = "当前模块不支持英数微调，请更新配套模块或恢复默认微调")
+            return
+        }
         val combinationName = name.trim()
         if (combinationName.isBlank() || combinationName.length > 60 ||
             combinationName.any { it in "\r\n\t/\\\u0000|" }) {
@@ -812,6 +839,8 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
         val cjkAxes = serializeAxes(mixState.cjkAxes, mixState.cjkWeight)
         val latinAxes = serializeAxes(mixState.latinAxes, mixState.latinWeight)
         val digitAxes = serializeAxes(mixState.digitAxes, mixState.digitWeight)
+        val latinSize = mixState.latinSize
+        val latinOffset = mixState.latinOffset
         mixState = mixState.copy(
             busy = true,
             taskId = "",
@@ -835,6 +864,8 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
                     selectedFonts[0]!!.sourceLabel().let { append(RootShell.quote(it)).append(' ') }
                     selectedFonts[1]!!.sourceLabel().let { append(RootShell.quote(it)).append(' ') }
                     append(RootShell.quote(selectedFonts[2]!!.sourceLabel()))
+                    append(' ').append(RootShell.quote(latinSize.toString()))
+                    append(' ').append(RootShell.quote(latinOffset.toString()))
                 }
                 val start = RootShell.exec(command, timeoutMs = 20_000L)
                 if (start.code != 0) error(start.stderr.ifBlank { "无法启动复合字体任务" })

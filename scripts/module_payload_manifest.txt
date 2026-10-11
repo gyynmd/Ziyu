@@ -20,6 +20,7 @@ common/font_metrics_io.py
 common/app_read_batch.py
 common/physical_payload_hashes.py
 common/composite_font.py
+common/composite_tune.sh
 common/device_font_boot_verify.sh
 common/device_font_cache.sh
 common/device_font_dynamic_guard.sh

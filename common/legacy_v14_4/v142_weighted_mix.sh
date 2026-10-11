@@ -38,6 +38,7 @@ MODULE_DIR="$MODDIR"
 [ -f "$MODDIR/common/background_task.sh" ] && . "$MODDIR/common/background_task.sh"
 [ -f "$MODDIR/common/mix_task_handoff.sh" ] && . "$MODDIR/common/mix_task_handoff.sh"
 [ -f "$MODDIR/common/font_switch_lock.sh" ] && . "$MODDIR/common/font_switch_lock.sh"
+. "$MODDIR/common/composite_tune.sh" || exit 126
 
 json_escape() {
     printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n\r' '  '
@@ -136,6 +137,9 @@ write_task() {
         printf 'message=%s\n' "$3"
         printf 'cjk=%s\nlatin=%s\ndigit=%s\n' "$4" "$5" "$6"
         printf 'cjkAxes=%s\nlatinAxes=%s\ndigitAxes=%s\n' "$7" "$8" "$9"
+        printf 'latinSize=%s\nlatinOffset=%s\n' \
+            "$(composite_tune_clamp "${LUOSHU_MIX_LATIN_SIZE:-0}" 15)" \
+            "$(composite_tune_clamp "${LUOSHU_MIX_LATIN_OFFSET:-0}" 10)"
         shift 9
         printf 'root=%s\nchildTask=%s\nstarted=%s\nfinished=%s\npercent=%s\n' "$1" "$2" "$3" "$4" "$5"
         if [ "$_wt_state" != cancelled ] && [ "$(read_value "$TASK_FILE" task)" = "$_wt_task" ]; then
@@ -297,11 +301,28 @@ start_prepare_job() {
     _spj_axes="$3"
     _spj_root="$4"
     _spj_internal="$5"
+    _spj_dependency_pid="${6:-}"
+    _spj_dependency_status="${7:-}"
     _spj_status="$_spj_root/prepare-${_spj_role}.status"
     rm -f "$_spj_status" "$_spj_status.tmp."* 2>/dev/null || true
     (
         export ZIYU_DEFER_PREPARE_CACHE_CLEANUP=1
-        if prepare_slot "$_spj_role" "$_spj_family" "$_spj_axes" "$_spj_root" "$_spj_internal"; then
+        _spj_dependency_ok=true
+        if [ -n "$_spj_dependency_pid" ]; then
+            # Matching Latin/digit requests share a verified instance. Wait for
+            # its atomic status file instead of generating it in two processes.
+            _spj_wait=0
+            while [ ! -s "$_spj_dependency_status" ] && [ "$_spj_wait" -lt 480 ]; do
+                kill -0 "$_spj_dependency_pid" 2>/dev/null || break
+                sleep 1
+                _spj_wait=$((_spj_wait + 1))
+            done
+            if [ "$(read_value "$_spj_dependency_status" state)" != success ]; then
+                _spj_dependency_ok=false
+                _last_prepare_error='同源英文字体准备未成功，无法复用数字实例'
+            fi
+        fi
+        if [ "$_spj_dependency_ok" = true ] && prepare_slot "$_spj_role" "$_spj_family" "$_spj_axes" "$_spj_root" "$_spj_internal"; then
             _spj_state=success
             _spj_message=''
             _spj_code=0
@@ -325,7 +346,7 @@ prune_prepare_cache() {
     PYTHONHOME="$PYROOT" \
         PYTHONPATH="$MODDIR/common:$PYROOT/lib/python3.14:$PYROOT/lib/python3.14/site-packages" \
         LD_LIBRARY_PATH="$PYROOT/lib:$PYROOT/lib/python3.14/lib-dynload${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$PYBIN" "$MODDIR/common/font_prepare_cache.py" --prune "$CACHE_ROOT" \
+        "$PYBIN" "$MODDIR/common/font_prepare_cache.py" --prune "$LUOSHU_PREPARE_CACHE" \
         >/dev/null 2>>"$LOG_FILE" || printf '[MIX_PREPARE] cache cleanup skipped after parallel preparation\n' >>"$LOG_FILE"
 }
 
@@ -364,7 +385,12 @@ parallel_prepare_slots() {
     _pps_cjk_pid="$PREPARE_JOB_PID"
     start_prepare_job latin "$_pps_latin" "$_pps_latin_axes" "$_pps_root" LuoShuMixLatin
     _pps_latin_pid="$PREPARE_JOB_PID"
-    start_prepare_job digit "$_pps_digit" "$_pps_digit_axes" "$_pps_root" LuoShuMixDigit
+    if [ "$_pps_latin" = "$_pps_digit" ] && [ "$_pps_latin_axes" = "$_pps_digit_axes" ]; then
+        start_prepare_job digit "$_pps_digit" "$_pps_digit_axes" "$_pps_root" LuoShuMixDigit \
+            "$_pps_latin_pid" "$_pps_root/prepare-latin.status"
+    else
+        start_prepare_job digit "$_pps_digit" "$_pps_digit_axes" "$_pps_root" LuoShuMixDigit
+    fi
     _pps_digit_pid="$PREPARE_JOB_PID"
 
     _pps_last_completed=-1
@@ -418,7 +444,10 @@ rewrite_public_config() {
             "$(safe_weight "$_cjk_axes")" "$(safe_weight "$_latin_axes")" "$(safe_weight "$_digit_axes")"
         printf 'cjkAxes=%s\nlatinAxes=%s\ndigitAxes=%s\n' "$_cjk_axes" "$_latin_axes" "$_digit_axes"
         printf 'cjkMode=fixed\nlatinMode=fixed\ndigitMode=fixed\n'
-        [ ! -f "$MIX_CONF" ] || grep -v -E '^(cjk|latin|digit|cjkWeight|latinWeight|digitWeight|cjkAxes|latinAxes|digitAxes|cjkMode|latinMode|digitMode)=' "$MIX_CONF" 2>/dev/null
+        printf 'latinSize=%s\nlatinOffset=%s\n' \
+            "$(composite_tune_clamp "$(read_value "$TASK_FILE" latinSize)" 15)" \
+            "$(composite_tune_clamp "$(read_value "$TASK_FILE" latinOffset)" 10)"
+        [ ! -f "$MIX_CONF" ] || grep -v -E '^(cjk|latin|digit|cjkWeight|latinWeight|digitWeight|cjkAxes|latinAxes|digitAxes|cjkMode|latinMode|digitMode|latinSize|latinOffset)=' "$MIX_CONF" 2>/dev/null
     } >"$_tmp" 2>/dev/null && mv -f "$_tmp" "$MIX_CONF" 2>/dev/null
     cp -f "$MIX_CONF" "$AXES_CONF" 2>/dev/null || true
     chmod 0644 "$MIX_CONF" "$AXES_CONF" 2>/dev/null || true
@@ -456,6 +485,8 @@ worker() {
     _digit_axes=$(read_value "$TASK_FILE" digitAxes)
     _root=$(read_value "$TASK_FILE" root)
 
+    export LUOSHU_MIX_LATIN_SIZE="$(composite_tune_clamp "$(read_value "$TASK_FILE" latinSize)" 15)"
+    export LUOSHU_MIX_LATIN_OFFSET="$(composite_tune_clamp "$(read_value "$TASK_FILE" latinOffset)" 10)"
     mix_cancel_checkpoint
     parallel_prepare_slots "$_wanted" "$_cjk" "$_latin" "$_digit" \
         "$_cjk_axes" "$_latin_axes" "$_digit_axes" "$_root" || {
@@ -543,6 +574,7 @@ worker() {
                     fi
                     update_task "$_wanted" success "$_base_message" 100 "$_child" "$(date +%s)"
                     # Generation records selections; applying uses the library id.
+                    rewrite_public_config
                     rm -rf "$_root"; clear_worker_pid "$_wanted"; exit 0
                     ;;
                 failed)
@@ -605,10 +637,12 @@ config_json() {
     _active=$(head -n1 "$ACTIVE_CONF" 2>/dev/null | tr -d '\r\n')
     _enabled=false
     [ "$_active" = mix ] && _enabled=true
-    printf '{"status":"ok","data":{"enabled":%s,"cjk":"%s","latin":"%s","digit":"%s","cjkWeight":%s,"latinWeight":%s,"digitWeight":%s,"cjkAxes":"%s","latinAxes":"%s","digitAxes":"%s"}}\n' \
+    printf '{"status":"ok","data":{"enabled":%s,"cjk":"%s","latin":"%s","digit":"%s","cjkWeight":%s,"latinWeight":%s,"digitWeight":%s,"cjkAxes":"%s","latinAxes":"%s","digitAxes":"%s","manualTuneSupported":true,"latinSize":%s,"latinOffset":%s}}\n' \
         "$_enabled" "$(json_escape "$_cjk")" "$(json_escape "$_latin")" "$(json_escape "$_digit")" \
         "$(safe_weight "$_cjk_axes")" "$(safe_weight "$_latin_axes")" "$(safe_weight "$_digit_axes")" \
-        "$(json_escape "$_cjk_axes")" "$(json_escape "$_latin_axes")" "$(json_escape "$_digit_axes")"
+        "$(json_escape "$_cjk_axes")" "$(json_escape "$_latin_axes")" "$(json_escape "$_digit_axes")" \
+        "$(composite_tune_clamp "$(read_value "$_source" latinSize)" 15)" \
+        "$(composite_tune_clamp "$(read_value "$_source" latinOffset)" 10)"
 }
 
 start_mix() {
