@@ -32,12 +32,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuButton as Button
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIcon as Icon
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,7 +61,7 @@ import androidx.compose.ui.window.DialogProperties
 import io.github.xgl34222220.ziyu.MixSlot
 import io.github.xgl34222220.ziyu.NativeFontPreview
 import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
 
 private enum class CompactPreviewScenario(val label: String) {
     MIXED("混排"), BODY("正文"), INTERFACE("界面"), WECHAT("微信"), PLAY("Play"), STATUS("状态栏"),
@@ -84,7 +84,7 @@ internal fun StudioCompositePreviewDialogCompact(
     val miuix = style == UiStyle.MIUIX
 
     StudioPreviewTheme(previewDark) {
-        val tokens = LocalMiuixTokens.current
+        val tokens = LocalZiyuPaletteTokens.current
         Dialog(
             onDismissRequest = onDismiss,
             properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -270,7 +270,7 @@ private fun CompactPreviewCard(
     style: UiStyle,
     content: @Composable () -> Unit,
 ) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(if (style == UiStyle.MIUIX) 27.dp else 22.dp),

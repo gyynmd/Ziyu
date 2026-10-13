@@ -21,12 +21,12 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Security
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
+import io.github.xgl34222220.ziyu.ui.design.ZiyuButton as Button
+import io.github.xgl34222220.ziyu.ui.design.ZiyuCircularProgressIndicator as CircularProgressIndicator
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIcon as Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.ziyu.InitializationUiState
 import io.github.xgl34222220.ziyu.ModuleProbeState
 import io.github.xgl34222220.ziyu.RootProbeState
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
 
 @Composable
 internal fun InitializationScreen(
@@ -46,7 +46,7 @@ internal fun InitializationScreen(
     onRecheck: () -> Unit,
     onStart: () -> Unit,
 ) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     val environment = state.environment
     val rootReady = environment.root == RootProbeState.AUTHORIZED
     val moduleReady = environment.module == ModuleProbeState.READY
@@ -162,7 +162,7 @@ private fun SetupStepCard(
     status: String,
     detail: String,
 ) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     val statusContainer = when {
         ready -> tokens.successContainer
         checking -> MaterialTheme.colorScheme.primaryContainer

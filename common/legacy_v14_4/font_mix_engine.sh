@@ -99,7 +99,8 @@ find_family_file() {
 validate_source() {
     _src="$1"; _label="$2"
     [ -f "$_src" ] || { echo "错误：找不到${_label}字体" >&2; return 1; }
-    if type font_validate >/dev/null 2>&1 && ! font_validate "$_src" text; then
+    if type font_validate >/dev/null 2>&1 && ! font_validate "$_src" mix-source; then
+        printf '[MIX-SOURCE] role=%s path=%s reason=%s\n' "$_label" "$_src" "$FONT_CHECK_ERROR" >&2
         echo "错误：${_label}字体无效：$FONT_CHECK_ERROR" >&2
         return 1
     fi

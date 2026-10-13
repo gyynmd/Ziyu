@@ -125,6 +125,13 @@ _diag_dump_once() {
     # Config and log sections appended separately: none of these may abort the dump.
     {
         _diag_emit_file 'mount-backend.conf' "$MODDIR/config/mount-backend.conf"
+        _diag_emit_file 'provider publication receipt' "$MODDIR/.ziyu-state/provider-published.conf"
+        _diag_emit_file 'provider reload check' "$MODDIR/config/provider-reload-check.conf"
+        _diag_emit_file 'provider reload start plan' "$MODDIR/.ziyu-state/provider-reload.started"
+        _diag_emit_file 'Mountify scanned modules' '/dev/mountify_logs/modules' 160
+        _diag_emit_file 'Mountify mount list' '/dev/mountify_logs/mountify_mount_list' 160
+        printf '\n[Mountify scan lock]\n'
+        ls -ld /proc/1/root/dev/mountify_single_instance 2>&1
         _diag_emit_file 'mount-backend-preference.conf' "$MODDIR/config/mount-backend-preference.conf"
         _diag_emit_file 'device-font-load-verification.conf' "$MODDIR/config/device-font-load-verification.conf"
         _diag_emit_file 'self-mount.conf' "$MODDIR/config/self-mount.conf"
@@ -155,6 +162,8 @@ _diag_dump_once() {
         _diag_emit_file 'font-apply-result.conf' "$MODDIR/config/font-apply-result.conf"
         _diag_emit_file 'font-mount-warnings.conf' "$MODDIR/config/font-mount-warnings.conf"
         _diag_emit_file 'device_font_partitions.conf' "$MODDIR/config/device_font_partitions.conf"
+        _diag_emit_file 'stock font snapshot receipt' "$MODDIR/config/stock-font-snapshot/manifest.json"
+        _diag_emit_file 'stock font snapshot log' "$MODDIR/logs/stock-font-snapshot.log" 40
         _diag_emit_file 'self-mount.log' "$MODDIR/logs/self-mount.log" 600
         _diag_emit_file 'mount-diagnostics.log' "$MODDIR/logs/mount-diagnostics.log" 1200
         _diag_emit_file 'mount-diagnostics previous' "$MODDIR/logs/mount-diagnostics.log.previous" 400

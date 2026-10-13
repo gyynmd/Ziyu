@@ -49,12 +49,15 @@ grep -q 'stat -c %s' "$ROOT/common/legacy_v14_4/font_check.sh"
 ! grep -qE 'font_validate_fast_v4|device_font_template|device_font_slot|font_config_overlay|device_font_payload_build' \
     "$ROOT/common/legacy_v14_4_switch.sh"
 
-grep -q 'MiuixTaskCenterHeader(' \
-    "$ROOT/android-app/app/src/main/java/io/github/xgl34222220/ziyu/ui/logs/LogsScreenMiuix.kt"
-grep -q 'DiagnosticExportButton(' \
-    "$ROOT/android-app/app/src/main/java/io/github/xgl34222220/ziyu/ui/logs/LogsScreenMiuix.kt"
-grep -q 'horizontalArrangement = Arrangement.spacedBy(10.dp)' \
-    "$ROOT/android-app/app/src/main/java/io/github/xgl34222220/ziyu/ui/logs/LogsScreenMiuix.kt"
+_logs_content="$ROOT/android-app/app/src/main/java/io/github/xgl34222220/ziyu/ui/logs/LogsScreenContent.kt"
+grep -q 'LogsPageContent(UiStyle.MATERIAL' "$ROOT/android-app/app/src/main/java/io/github/xgl34222220/ziyu/ui/logs/LogsScreenMaterial.kt"
+grep -q 'LogsPageContent(UiStyle.MIUIX' "$ROOT/android-app/app/src/main/java/io/github/xgl34222220/ziyu/ui/logs/LogsScreenMiuix.kt"
+grep -q 'LogsPageContent(UiStyle.COUI' "$ROOT/android-app/app/src/main/java/io/github/xgl34222220/ziyu/ui/logs/LogsScreenCoui.kt"
+grep -q 'internal fun LogsPageContent(' "$_logs_content"
+grep -q 'DiagnosticExportButton(style = style' "$_logs_content"
+grep -q 'items(state.tasks, key = { "task-${it.id}" })' "$_logs_content"
+grep -q 'items(visibleLines, key = { "log-${it.index}" })' "$_logs_content"
+grep -q 'if (tab == LogsTab.LOGS) layout.compactPadding / 2 else layout.itemGap - 4.dp' "$_logs_content"
 ! grep -q 'top = if (style == UiStyle.MIUIX)' \
     "$ROOT/android-app/app/src/main/java/io/github/xgl34222220/ziyu/ui/logs/LogsRoute.kt"
 # All routed header actions keep an accessible touch target while their visible surface stays quiet.
@@ -62,7 +65,7 @@ grep -q 'ZiyuHeaderAction(' \
     "$ROOT/android-app/app/src/main/java/io/github/xgl34222220/ziyu/ui/logs/DiagnosticExportUi.kt"
 grep -q 'HeaderTouchTarget = 48.dp' \
     "$ROOT/android-app/app/src/main/java/io/github/xgl34222220/ziyu/ui/theme/ZiyuIconSystem.kt"
-grep -q 'HeaderContainer = 44.dp' \
+grep -q 'HeaderContainer = 48.dp' \
     "$ROOT/android-app/app/src/main/java/io/github/xgl34222220/ziyu/ui/theme/ZiyuIconSystem.kt"
 grep -q 'HeaderGlyph = 21.dp' \
     "$ROOT/android-app/app/src/main/java/io/github/xgl34222220/ziyu/ui/theme/ZiyuIconSystem.kt"

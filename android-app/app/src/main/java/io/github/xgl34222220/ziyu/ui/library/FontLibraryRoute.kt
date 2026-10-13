@@ -2,10 +2,10 @@ package io.github.xgl34222220.ziyu.ui.library
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import io.github.xgl34222220.ziyu.ui.theme.ZiyuMotionTokens
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.layout.Arrangement
@@ -55,9 +55,10 @@ internal fun FontLibraryRoute(
         ).fonts
     }
     val displayState = state.copy(fonts = displayFonts, visibleCount = displayFonts.size, filter = filter, sort = sort)
-    LaunchedEffect(state.allFonts, state.loading) {
+    LaunchedEffect(state.allFonts, state.loading, state.pendingDeletionIds) {
         if (!state.loading) {
-            val existing = state.allFonts.map { it.id }.toSet()
+            // Pending cards are hidden, but failure must preserve their metadata.
+            val existing = state.allFonts.map { it.id }.toSet() + state.pendingDeletionIds
             val cleaned = FontLibraryCollections(
                 favoriteIds = collections.favoriteIds.intersect(existing),
                 tags = collections.tags.filterKeys { it in existing },
@@ -126,8 +127,8 @@ internal fun FontLibraryRoute(
 
     val childLayerActive = showManagement || detailFont != null
     val pageScale by animateFloatAsState(
-        targetValue = if (childLayerActive) .96f else 1f,
-        animationSpec = spring(dampingRatio = .86f, stiffness = Spring.StiffnessMediumLow),
+        targetValue = if (style == UiStyle.MIUIX && childLayerActive) .96f else 1f,
+        animationSpec = tween(ZiyuMotionTokens.Emphasized, easing = FastOutSlowInEasing),
         label = "fontLibraryDepthScale",
     )
     Box(
@@ -136,12 +137,11 @@ internal fun FontLibraryRoute(
             scaleY = pageScale
         },
     ) {
-        FontLibraryScreenCompact(
-            style = style,
-            state = displayState,
-            actions = displayActions,
-            tools = managementTools,
-        )
+        when (style) {
+            UiStyle.MATERIAL -> FontLibraryScreenMaterial(displayState, displayActions, managementTools)
+            UiStyle.MIUIX -> FontLibraryScreenMiuix(displayState, displayActions, managementTools)
+            UiStyle.COUI -> FontLibraryScreenCoui(displayState, displayActions, managementTools)
+        }
     }
 
     if (showManagement) {

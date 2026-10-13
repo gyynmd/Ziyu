@@ -67,3 +67,21 @@ ziyu_live_current() {
 ziyu_live_source() { ziyu_live_current && printf '%s' "$_zlc_source"; }
 ziyu_live_work_root() { ziyu_live_current && printf '%s' "$_zlc_root"; }
 ziyu_live_font() { ziyu_live_current && printf '%s' "$_zlc_font"; }
+
+# active_font.conf is the user's selection and may already name the next queue.
+# Verification must identify the payload being checked, including restore-default.
+ziyu_current_payload_font() {
+    _zcpf_module="${1:-${MODULE_DIR:-${MODDIR:-/data/adb/modules/LuoShu}}}"
+    ziyu_live_font && return 0
+    for _zcpf_pending in "$_zcpf_module/config/font-payload-next.conf" "$_zcpf_module/config/universal-font-next.conf"; do
+        [ -s "$_zcpf_pending" ] || continue
+        [ "$(ziyu_live_value "$_zcpf_pending" state)" = prepared ] || continue
+        _zcpf_previous=$(ziyu_live_value "$_zcpf_pending" previousFont)
+        if [ -n "$_zcpf_previous" ]; then
+            printf '%s\n' "$_zcpf_previous"
+            return 0
+        fi
+    done
+    _zcpf_font=$(head -n1 "$_zcpf_module/config/active_font.conf" 2>/dev/null | tr -d '\r\n')
+    printf '%s\n' "${_zcpf_font:-default}"
+}

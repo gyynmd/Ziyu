@@ -1,7 +1,22 @@
 #!/system/bin/sh
 # Persist provider-first automatic selection or one of the explicit self-mount modes.
+_lmp_source_file="${BASH_SOURCE:-$0}"
+_lmp_source_common="${_lmp_source_file%/*}"
+_lmp_load_state_reader() {
+    type ziyu_backend_state_load >/dev/null 2>&1 && return 0
+    _lmp_state_helper="$(_lmp_module)/common/mount_backend_state.sh"
+    [ -f "$_lmp_state_helper" ] || _lmp_state_helper="$_lmp_source_common/mount_backend_state.sh"
+    . "$_lmp_state_helper" || return 1
+}
 _lmp_module() { printf '%s\n' "${MODDIR:-${MODULE_DIR:-/data/adb/modules/LuoShu}}"; }
-_lmp_value() { sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1 | tr -d '\r\n'; }
+_lmp_value() {
+    if type ziyu_mount_conf_value >/dev/null 2>&1; then
+        ziyu_mount_conf_value "$1" "$2"
+    else
+        # Preference migration can run in old installers before the reader is deployed.
+        sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1 | tr -d '\r\n'
+    fi
+}
 _lmp_valid() { case "$1" in auto|magic|overlayfs|self_mount|meta|self) return 0 ;; *) return 1 ;; esac; }
 _lmp_normalize() {
     case "${1:-}" in
@@ -39,11 +54,13 @@ luoshu_mount_preference_restore() {
 luoshu_mount_preference_status() {
     _lmp_status_module=$(_lmp_module)
     _lmp_status_file="$_lmp_status_module/config/mount-backend.conf"
+    _lmp_load_state_reader || return 1
+    ziyu_backend_state_load "$_lmp_status_file" || :
     . "$_lmp_status_module/common/mount_backend_details.sh"
-    luoshu_mount_backend_details
+    luoshu_mount_backend_details snapshot
     _lmp_preferred=$(luoshu_mount_preference_get)
-    _lmp_boot_preference=$(_lmp_value "$_lmp_status_file" preferred_backend)
-    _lmp_state_boot=$(_lmp_value "$_lmp_status_file" boot_id)
+    _lmp_boot_preference=$ZIYU_BACKEND_PREFERRED_BACKEND
+    _lmp_state_boot=$ZIYU_BACKEND_BOOT_ID
     _lmp_current_boot=$(_lmp_boot_id)
     _lmp_active=none
     _lmp_selected=none
@@ -53,12 +70,12 @@ luoshu_mount_preference_status() {
     _lmp_pending=true
     if [ -n "$_lmp_current_boot" ] && [ "$_lmp_state_boot" = "$_lmp_current_boot" ]; then
         _lmp_boot_preference=$(_lmp_normalize "$_lmp_boot_preference")
-        _lmp_active=$(_lmp_value "$_lmp_status_file" active_backend)
-        _lmp_selected=$(_lmp_value "$_lmp_status_file" selected_backend)
-        # A matching boot record means detection ran, even when NoMount is unusable.
-        _lmp_nomount_observed=true
-        [ "$(_lmp_value "$_lmp_status_file" nomount_kernel_usable)" = 1 ] && _lmp_nomount_usable=true
-        _lmp_selected_self=$(_lmp_value "$_lmp_status_file" selected_self_backend)
+        _lmp_active=$ZIYU_BACKEND_ACTIVE_BACKEND
+        _lmp_selected=$ZIYU_BACKEND_SELECTED_BACKEND
+        # The early provider scan has not queried the kernel API yet.
+        case "$ZIYU_BACKEND_NOMOUNT_KERNEL_USABLE" in 0|1) _lmp_nomount_observed=true ;; esac
+        [ "$ZIYU_BACKEND_NOMOUNT_KERNEL_USABLE" = 1 ] && _lmp_nomount_usable=true
+        _lmp_selected_self=$ZIYU_BACKEND_SELECTED_SELF_BACKEND
         case "$_lmp_selected_self" in nomount|legacy|magic|overlayfs|self_mount) ;; *) _lmp_selected_self=none ;; esac
         [ "$_lmp_preferred" != "$_lmp_boot_preference" ] || _lmp_pending=false
     else
@@ -66,12 +83,12 @@ luoshu_mount_preference_status() {
     fi
     case "$_lmp_active" in self|meta|external) ;; *) _lmp_active=none ;; esac
     case "$_lmp_selected" in self|meta|external|unresolved|none) ;; *) _lmp_selected=none ;; esac
-    _lmp_failure=$(_lmp_value "$_lmp_status_file" preference_failure)
-    _lmp_error=$(_lmp_value "$_lmp_status_file" last_error)
-    _lmp_provider_state=$(_lmp_value "$_lmp_status_file" provider_state)
-    _lmp_provider_id=$(_lmp_value "$_lmp_status_file" provider_id)
-    _lmp_provider_layout=$(_lmp_value "$_lmp_status_file" provider_layout)
-    _lmp_verification=$(_lmp_value "$_lmp_status_file" verification)
+    _lmp_failure=$ZIYU_BACKEND_PREFERENCE_FAILURE
+    _lmp_error=$ZIYU_BACKEND_LAST_ERROR
+    _lmp_provider_state=$ZIYU_BACKEND_PROVIDER_STATE
+    _lmp_provider_id=$ZIYU_BACKEND_PROVIDER_ID
+    _lmp_provider_layout=$ZIYU_BACKEND_PROVIDER_LAYOUT
+    _lmp_verification=$ZIYU_BACKEND_VERIFICATION
     if [ -z "$_lmp_current_boot" ] || [ "$_lmp_state_boot" != "$_lmp_current_boot" ]; then
         _lmp_provider_state=unknown
         _lmp_provider_id=unknown
@@ -97,11 +114,13 @@ luoshu_mount_preference_status() {
 }
 luoshu_mount_preference_cancel() {
     _lmp_cancel_file="$(_lmp_module)/config/mount-backend.conf"
-    _lmp_cancel_boot=$(_lmp_value "$_lmp_cancel_file" boot_id)
+    _lmp_load_state_reader || return 1
+    ziyu_backend_state_load "$_lmp_cancel_file" || return 1
+    _lmp_cancel_boot=$ZIYU_BACKEND_BOOT_ID
     _lmp_cancel_current=$(_lmp_boot_id)
     # Without a current-boot decision, cancel cannot infer a live policy.
     [ -n "$_lmp_cancel_current" ] && [ "$_lmp_cancel_boot" = "$_lmp_cancel_current" ] || return 1
-    _lmp_cancel_preference=$(_lmp_value "$_lmp_cancel_file" preferred_backend)
+    _lmp_cancel_preference=$ZIYU_BACKEND_PREFERRED_BACKEND
     _lmp_valid "$_lmp_cancel_preference" || _lmp_cancel_preference=auto
     luoshu_mount_preference_write "$_lmp_cancel_preference"
 }

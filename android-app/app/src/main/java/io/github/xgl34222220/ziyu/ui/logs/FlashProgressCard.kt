@@ -21,11 +21,16 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FontDownload
 import androidx.compose.material.icons.rounded.RestartAlt
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIcon as Icon
+import io.github.xgl34222220.ziyu.ui.design.ZiyuLinearProgressIndicator as LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.material3.CardDefaults
+import io.github.xgl34222220.ziyu.ui.theme.ZiyuCard
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuThemeTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalUiStyle
+import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -33,14 +38,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
 
 /** The task snapshot owns liveness. Historical text never starts an animation. */
 @Composable
 internal fun FlashProgressCard(state: LogsUiState) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
+    val style = LocalUiStyle.current
+    val layout = LocalZiyuThemeTokens.current.layout
     val task = primaryFlashTask(state.tasks)
     val running = task?.active == true
     val failed = task?.phase == TaskPhase.FAILED
@@ -63,22 +71,18 @@ internal fun FlashProgressCard(state: LogsUiState) {
         targetValue = ((task?.progress ?: 0).coerceIn(0, 100) / 100f),
         animationSpec = tween(280), label = "flashProgress",
     )
-    Surface(
+    ZiyuCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(26.dp),
-        color = tokens.cardBackground,
-        shadowElevation = ZiyuLayoutTokens.CardElevation,
+        colors = CardDefaults.cardColors(containerColor = tokens.cardBackground, contentColor = tokens.textPrimary),
     ) {
         Column(
             modifier = Modifier.animateContentSize(tween(220))
-                .clip(RoundedCornerShape(26.dp))
-                .background(Brush.verticalGradient(listOf(accent.copy(alpha = .075f), tokens.cardBackground)))
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+                .padding(layout.cardPadding),
+            verticalArrangement = Arrangement.spacedBy(layout.itemGap),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(shape = RoundedCornerShape(16.dp), color = accent.copy(alpha = .12f)) {
-                    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(if (style == UiStyle.MATERIAL) 48.dp else 36.dp), contentAlignment = Alignment.Center) {
                         Icon(
                             when { failed -> Icons.Rounded.Close; reboot -> Icons.Rounded.RestartAlt
                                 complete -> Icons.Rounded.Check; else -> Icons.Rounded.FontDownload },
@@ -88,8 +92,8 @@ internal fun FlashProgressCard(state: LogsUiState) {
                 }
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("字体刷写", color = tokens.textSecondary, fontSize = 12.sp)
-                    Text(title, color = tokens.textPrimary, fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold)
+                    Text("字体任务", color = tokens.textSecondary, style = MaterialTheme.typography.bodySmall)
+                    Text(title, color = tokens.textPrimary, style = if (style == UiStyle.MATERIAL) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium)
                 }
             }
             if (running) {
@@ -97,7 +101,7 @@ internal fun FlashProgressCard(state: LogsUiState) {
                     Text(task?.kind?.label.orEmpty(), color = accent, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.weight(1f))
                     if ((task?.progress ?: -1) >= 0) {
-                        Text("${task!!.progress.coerceIn(0, 100)}", color = tokens.textPrimary, fontSize = 40.sp, lineHeight = 44.sp, fontWeight = FontWeight.SemiBold)
+                        Text("${task!!.progress.coerceIn(0, 100)}", color = tokens.textPrimary, style = MaterialTheme.typography.headlineMedium)
                         Text(" %", color = tokens.textSecondary, fontSize = 16.sp, modifier = Modifier.padding(bottom = 4.dp))
                     } else {
                         Text("请稍候", color = tokens.textSecondary, fontSize = 14.sp)
@@ -113,10 +117,11 @@ internal fun FlashProgressCard(state: LogsUiState) {
             Text(
                 task?.message?.let(::taskDisplayMessage)?.ifBlank { null }
                     ?: "从字体库选择字体后，这里会展示实际进度与处理结果。",
-                color = tokens.textSecondary, fontSize = 14.sp, lineHeight = 22.sp,
+                color = tokens.textSecondary, style = MaterialTheme.typography.bodyMedium,
+                maxLines = 3, overflow = TextOverflow.Ellipsis,
             )
             if (reboot) {
-                Text("文件已准备，不代表当前系统已经切换。请完整重启手机。", color = accent, fontSize = 13.sp, lineHeight = 20.sp)
+                Text(if (state.temporaryRootMode) "字体已准备，请执行软重启后查看验证结果。" else "字体已准备，请完整重启后查看验证结果。", color = accent, style = MaterialTheme.typography.bodySmall)
             } else if (failed) {
                 Text("展开下方详情查看原因；原始输出保留在日志页。", color = accent, fontSize = 13.sp, lineHeight = 20.sp)
             }
@@ -131,9 +136,9 @@ internal fun FlashProgressCard(state: LogsUiState) {
 
 @Composable
 private fun FlashCount(label: String, count: Int, modifier: Modifier) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(count.toString(), color = tokens.textPrimary, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-        Text(label, color = tokens.textSecondary, fontSize = 12.sp)
+        Text(count.toString(), color = tokens.textPrimary, style = MaterialTheme.typography.titleLarge)
+        Text(label, color = tokens.textSecondary, style = MaterialTheme.typography.bodySmall)
     }
 }

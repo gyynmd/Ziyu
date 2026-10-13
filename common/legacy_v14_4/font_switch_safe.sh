@@ -142,6 +142,7 @@ safe_mapper_identity() {
                          "$MODDIR/common/font_metrics_normalize.py" \
                          "$MODDIR/common/coloros_metrics_batch.py" \
                          "$MODDIR/common/originos_stage_complete.py" \
+                         "$MODDIR/common/font_scan_profile.py" \
                          "$MODDIR/common/hyperos_physical_policy.py" \
                          "$MODDIR/common/font_role_policy.py" \
                          "$MODDIR/common/font_slot_weight.py" \
@@ -821,7 +822,7 @@ switch_font() {
                     return 1
                 }
             else
-                progress 76 '正在检查并补齐原厂中文字体槽位'
+                progress 76 '正在按本机清单补齐系统 UI 字体槽位'
                 stage_originos_complete || {
                     safe_error 'vivo 中文字体槽位或度量处理失败，请查看字体切换日志'
                     return 1

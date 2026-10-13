@@ -17,13 +17,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
+import io.github.xgl34222220.ziyu.ui.design.ZiyuAlertDialog as AlertDialog
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIcon as Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuOutlinedTextField as OutlinedTextField
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,7 +44,7 @@ import io.github.xgl34222220.ziyu.NativeFontPreview
 import io.github.xgl34222220.ziyu.MixSlot
 import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
 import io.github.xgl34222220.ziyu.ui.font.resolveAndCacheFontDefaultAxes
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
 import kotlinx.coroutines.launch
 
 @Composable
@@ -195,7 +195,7 @@ private fun MiuixFontPickerDialog(
     onDismiss: () -> Unit,
     onChoose: (FontItem) -> Unit,
 ) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     var query by remember(slot) { mutableStateOf("") }
     val filtered = remember(fonts, query) { filterFonts(fonts, query) }
     Dialog(onDismissRequest = onDismiss) {

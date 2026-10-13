@@ -16,9 +16,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuAlertDialog as AlertDialog
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuTextButton as TextButton
 import io.github.xgl34222220.ziyu.rememberNativeImportViewModel
 import io.github.xgl34222220.ziyu.NativeImportPhase
 import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
@@ -56,15 +56,12 @@ internal fun LogsRoute(
             .navigationBarsPadding()
             .padding(bottom = 8.dp),
     ) {
-        LogsScreenCompact(
-            style = style,
-            state = displayState,
-            actions = displayActions,
-            diagnosticState = diagnosticState,
-            onDiagnostic = onDiagnostic,
-            onBack = onBack,
-            controlsBottomPadding = if (hasImportControls) with(density) { importControlsHeight.toDp() } else 0.dp,
-        )
+        val controlsPadding = if (hasImportControls) with(density) { importControlsHeight.toDp() } else 0.dp
+        when (style) {
+            UiStyle.MATERIAL -> LogsScreenMaterial(displayState, displayActions, diagnosticState, onDiagnostic, onBack, controlsPadding)
+            UiStyle.MIUIX -> LogsScreenMiuix(displayState, displayActions, diagnosticState, onDiagnostic, onBack, controlsPadding)
+            UiStyle.COUI -> LogsScreenCoui(displayState, displayActions, diagnosticState, onDiagnostic, onBack, controlsPadding)
+        }
         ImportTaskControls(
             style = style,
             state = importState,

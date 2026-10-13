@@ -41,6 +41,7 @@ case "$_result" in
     already-current)
         rm -f "$MODDIR/config/app_install_manual" 2>/dev/null || true
         print_line "字域 App 已是模块内置的当前版本。"
+        print_line "字域APP已经放置到桌面上了啦！请不要重复点击运行"
         exit 0
         ;;
     deferred)

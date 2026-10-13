@@ -2,11 +2,11 @@
 # LuoShu - 字体文件真实格式与基础兼容性检测
 # 只读取文件，不修改字体。
 
-# 同一个字体在一次 shell 进程中通常会连续经过格式、完整性、可变字体和彩色字体检查。
-# 缓存前 128 KiB 中出现的 SFNT 表标签，避免每个标签都重新 dd 一遍大字体文件。
+# 基础检查沿用现有缓存；组合源使用真实 SFNT/TTC 表目录单独填充该缓存。
 FONT_TABLE_CACHE_FILE=""
 FONT_TABLE_CACHE_TAGS=""
 FONT_TABLE_CACHE_READY="false"
+FONT_TABLE_CACHE_ERROR=""
 
 font_magic_hex() {
     dd if="$1" bs=1 count=4 2>/dev/null | od -An -tx1 | tr -d ' \n\r'
@@ -19,11 +19,40 @@ font_table_token() {
     esac
 }
 
+font_table_directory_cache_load() {
+    _ftc_file="$1"
+    FONT_TABLE_CACHE_FILE="$_ftc_file"
+    FONT_TABLE_CACHE_TAGS=""
+    FONT_TABLE_CACHE_READY="false"
+    FONT_TABLE_CACHE_ERROR=""
+    _ftc_module="${MODULE_DIR:-${MODDIR:-/data/adb/modules/LuoShu}}"
+    _ftc_root="$_ftc_module/common/python"
+    _ftc_checker="$_ftc_module/common/font_structure.py"
+    _ftc_python="${LUOSHU_HOST_PYTHON:-$_ftc_root/bin/luoshu-python}"
+    if [ ! -f "$_ftc_checker" ] || [ ! -x "$_ftc_python" ]; then
+        FONT_TABLE_CACHE_ERROR="字体表目录校验器不可用"
+        return 1
+    fi
+    if [ -n "${LUOSHU_HOST_PYTHON:-}" ]; then
+        _ftc_result=$("$_ftc_python" "$_ftc_checker" --tables "$_ftc_file" 2>&1)
+    else
+        _ftc_result=$(PYTHONHOME="$_ftc_root" PYTHONPATH="$_ftc_root/lib/python3.14/site-packages" \
+            LD_LIBRARY_PATH="$_ftc_root/lib:$_ftc_root/lib/python3.14/lib-dynload${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            "$_ftc_python" "$_ftc_checker" --tables "$_ftc_file" 2>&1)
+    fi
+    _ftc_rc=$?
+    if [ "$_ftc_rc" -ne 0 ]; then
+        FONT_TABLE_CACHE_ERROR="字体表目录无效：${_ftc_result:-无法读取}"
+        return 1
+    fi
+    FONT_TABLE_CACHE_TAGS="$_ftc_result"
+    FONT_TABLE_CACHE_READY="true"
+    return 0
+}
+
 font_table_cache_load() {
     _ftc_file="$1"
     FONT_TABLE_CACHE_FILE="$_ftc_file"
-    # SFNT 表目录位于文件头部。一次读取后提取洛书关心的全部标签；命令替换只保存
-    # 匹配到的 ASCII 标签，不会把字体二进制内容放进 shell 变量。
     FONT_TABLE_CACHE_TAGS=$(
         dd if="$_ftc_file" bs=65536 count=2 2>/dev/null | \
             grep -a -o -E 'cmap|head|maxp|fvar|COLR|CBDT|sbix|SVG ' 2>/dev/null | \
@@ -52,7 +81,6 @@ font_has_table() {
             fi
             ;;
     esac
-    # 兼容未知标签或极少数 grep 不支持 -o/-E 的环境。
     dd if="$_fht_file" bs=65536 count=2 2>/dev/null | grep -a -q "$_fht_tag"
 }
 
@@ -126,7 +154,11 @@ font_validate() {
             ;;
     esac
 
-    font_table_cache_load "$_file"
+    if [ "$_purpose" = mix-source ]; then
+        font_table_directory_cache_load "$_file" || { FONT_CHECK_ERROR="$FONT_TABLE_CACHE_ERROR"; return 1; }
+    else
+        font_table_cache_load "$_file"
+    fi
 
     if ! font_has_table "$_file" "cmap"; then
         FONT_CHECK_ERROR="字体缺少 cmap 字符映射表"

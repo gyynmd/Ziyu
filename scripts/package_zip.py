@@ -25,5 +25,6 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive
             info.external_attr = (0o100755 if executable else 0o100644) << 16
             info.compress_type = zipfile.ZIP_DEFLATED
             with open(path, "rb") as source:
-                archive.writestr(info, source.read())
+                # An explicit ZipInfo does not inherit ZipFile's compression level.
+                archive.writestr(info, source.read(), compresslevel=9)
 print("wrote", out, os.path.getsize(out), "bytes")

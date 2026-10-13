@@ -4,15 +4,16 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
+import io.github.xgl34222220.ziyu.ui.theme.ZiyuMotionTokens
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,23 +50,26 @@ import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SystemUpdate
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import io.github.xgl34222220.ziyu.ui.design.ZiyuAlertDialog as AlertDialog
+import io.github.xgl34222220.ziyu.ui.design.ZiyuButton as Button
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuCard as Card
+import io.github.xgl34222220.ziyu.ui.theme.ZiyuCardDefaults
+import io.github.xgl34222220.ziyu.ui.theme.ZiyuSegmentedTabs
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import io.github.xgl34222220.ziyu.ui.design.ZiyuCircularProgressIndicator as CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuHorizontalDivider as HorizontalDivider
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIcon as Icon
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
+import io.github.xgl34222220.ziyu.ui.design.ZiyuModalBottomSheet as ModalBottomSheet
+import io.github.xgl34222220.ziyu.ui.design.ZiyuOutlinedButton as OutlinedButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuRadioButton as RadioButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSwitch as Switch
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuTextButton as TextButton
+import io.github.xgl34222220.ziyu.ui.design.rememberZiyuModalBottomSheetState as rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -77,10 +81,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -98,7 +109,9 @@ import io.github.xgl34222220.ziyu.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.ziyu.ui.appearance.KolorStyle
 import io.github.xgl34222220.ziyu.ui.appearance.ThemeMode
 import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuThemeTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalUiStyle
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuLayoutTokens
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuShapeTokens
 import io.github.xgl34222220.ziyu.ui.theme.LocalDockContentPadding
@@ -106,7 +119,6 @@ import io.github.xgl34222220.ziyu.ui.theme.ZiyuDetailBar
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuGlyph
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuIconTokens
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuTopBar
-import io.github.xgl34222220.ziyu.ui.theme.ZiyuSectionHeading
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -174,17 +186,18 @@ internal fun SettingsHubRoute(
 
     AnimatedContent(
         targetState = section,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().background(LocalZiyuPaletteTokens.current.pageBackground).clipToBounds(),
         transitionSpec = {
-            if (targetState != null) {
-                (fadeIn(tween(250)) + slideInHorizontally(tween(340)) { it })
-                    .togetherWith(
-                        fadeOut(tween(210), targetAlpha = .52f) + slideOutHorizontally(tween(340)) { -it / 7 },
-                    )
+            val slide = tween<androidx.compose.ui.unit.IntOffset>(ZiyuMotionTokens.Emphasized, easing = FastOutSlowInEasing)
+            (if (targetState != null) {
+                slideInHorizontally(slide) { it }
+                    .togetherWith(slideOutHorizontally(slide) { -it / 4 })
+                    .apply { targetContentZIndex = 1f }
             } else {
-                (fadeIn(tween(230)) + slideInHorizontally(tween(340)) { -it / 7 })
-                    .togetherWith(fadeOut(tween(210)) + slideOutHorizontally(tween(340)) { it })
-            }
+                slideInHorizontally(slide) { -it / 4 }
+                    .togetherWith(slideOutHorizontally(slide) { it })
+                    .apply { targetContentZIndex = 0f }
+            }).using(null)
         },
         label = "settingsDetailTransition",
     ) { target ->
@@ -199,14 +212,7 @@ internal fun SettingsHubRoute(
                 Modifier
                     .fillMaxSize()
                     .navigationBarsPadding()
-                    .then(
-                        if (settings.uiStyle == UiStyle.MIUIX) {
-                            Modifier
-                                .background(LocalMiuixTokens.current.pageBackground)
-                        } else {
-                            Modifier
-                        },
-                    ),
+                    .background(LocalZiyuPaletteTokens.current.pageBackground),
             ) {
                 ZiyuDetailBar(title = target.label, onBack = { sectionName = null })
                 Box(Modifier.weight(1f)) {
@@ -231,22 +237,24 @@ private fun SettingsHome(
     onOpenTasks: () -> Unit,
 ) {
     val h = model.health
-    val bottom = maxOf(LocalDockContentPadding.current, ZiyuLayoutTokens.FloatingDockSafeBottom)
+    val layout = LocalZiyuThemeTokens.current.layout
+    val style = LocalUiStyle.current
+    val bottom = maxOf(LocalDockContentPadding.current, layout.dockSafeBottom)
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().background(LocalZiyuPaletteTokens.current.pageBackground),
         contentPadding = PaddingValues(
-            start = ZiyuLayoutTokens.PageHorizontal,
-            top = 0.dp,
-            end = ZiyuLayoutTokens.PageHorizontal,
+            start = layout.pageHorizontal,
+            top = layout.pageTop,
+            end = layout.pageHorizontal,
             bottom = bottom,
         ),
-        verticalArrangement = Arrangement.spacedBy(ZiyuLayoutTokens.ItemGap),
+        verticalArrangement = Arrangement.spacedBy(layout.cardGap),
     ) {
         item { ZiyuTopBar("设置") }
         item {
             SettingsOverviewCard(h) { onOpenSection(SettingsSection.OVERVIEW) }
         }
-        item { ZiyuSectionHeading("你的字域", "调整喜欢的样子，查看每次字体任务") }
+        item { SettingsSectionLabel("你的字域", "界面外观与任务记录") }
         item {
             SettingsGroup {
                 SettingsNavigationRow(
@@ -263,7 +271,7 @@ private fun SettingsHome(
                 )
             }
         }
-        item { ZiyuSectionHeading("管理与维护") }
+        item { SettingsSectionLabel("管理与维护") }
         item {
             SettingsGroup {
                 SettingsNavigationRow(
@@ -294,61 +302,88 @@ private fun SettingsHome(
 }
 
 @Composable
+private fun SettingsSectionLabel(title: String, subtitle: String? = null) {
+    val style = LocalUiStyle.current
+    val tokens = LocalZiyuPaletteTokens.current
+    val titleStyle = when (style) {
+        UiStyle.MATERIAL, UiStyle.MIUIX -> MaterialTheme.typography.titleMedium
+        UiStyle.COUI -> MaterialTheme.typography.titleSmall
+    }
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(title, style = titleStyle, color = tokens.textPrimary)
+        subtitle?.takeIf { it.isNotBlank() }?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
+        }
+    }
+}
+
+@Composable
 private fun SettingsOverviewCard(health: SystemHealthSnapshot, onClick: () -> Unit) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
+    val layout = LocalZiyuThemeTokens.current.layout
+    val style = LocalUiStyle.current
+    val scheme = MaterialTheme.colorScheme
     val accent = when {
-        health.loading -> MaterialTheme.colorScheme.primary
-        health.level == HealthLevel.ERROR -> MaterialTheme.colorScheme.error
+        health.loading -> scheme.primary
+        health.level == HealthLevel.ERROR -> scheme.error
         health.level == HealthLevel.WARNING -> tokens.warning
         else -> tokens.success
+    }
+    val statusIcon = when {
+        health.loading -> Icons.Rounded.Info
+        health.level == HealthLevel.ERROR -> Icons.Rounded.Error
+        health.level == HealthLevel.WARNING -> Icons.Rounded.Info
+        else -> Icons.Rounded.CheckCircle
     }
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = ZiyuShapeTokens.Card,
-        color = if (!health.loading && health.level == HealthLevel.HEALTHY) tokens.successContainer else tokens.cardBackground,
-        shadowElevation = ZiyuLayoutTokens.CardElevation,
+        color = if (style == UiStyle.MATERIAL) scheme.surfaceContainerLow else tokens.cardBackground,
+        border = ZiyuCardDefaults.border(),
+        shadowElevation = layout.cardElevation,
     ) {
-        Column(Modifier.padding(ZiyuLayoutTokens.CardPadding), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        Column(Modifier.padding(layout.compactPadding), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    modifier = Modifier.size(52.dp),
-                    shape = RoundedCornerShape(18.dp),
-                    color = accent.copy(alpha = .12f),
+                    modifier = Modifier.size(34.dp),
+                    shape = ZiyuShapeTokens.Small,
+                    color = accent.copy(alpha = .10f),
+                    contentColor = accent,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text("字", color = MaterialTheme.colorScheme.primary, fontSize = 25.sp, fontWeight = FontWeight.SemiBold)
+                        Icon(statusIcon, null, modifier = Modifier.size(19.dp), tint = accent)
                     }
                 }
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("字域状态", color = tokens.textPrimary, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.width(11.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("字域状态", color = tokens.textPrimary, style = MaterialTheme.typography.titleSmall)
                     Text(
                         if (health.loading) "正在读取模块状态…" else health.summary,
-                        color = accent,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                    )
-                }
-                Icon(Icons.Rounded.ChevronRight, null, tint = tokens.textSecondary, modifier = Modifier.size(22.dp))
-            }
-            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .045f)) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
-                    Text("当前字体", color = tokens.textSecondary, fontSize = 12.sp)
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        if (health.loading) "正在读取…" else if (health.activeFont == "default") "系统默认" else health.activeFont.ifBlank { "尚未选择" },
-                        color = tokens.textPrimary,
-                        fontSize = 16.sp,
-                        lineHeight = 22.sp,
-                        fontWeight = FontWeight.Medium,
+                        color = tokens.textSecondary,
+                        style = MaterialTheme.typography.bodySmall,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (health.rebootRequired) {
-                        Spacer(Modifier.height(5.dp))
-                        Text("字体变更等待重启生效", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
-                    }
+                }
+                ZiyuGlyph(Icons.Rounded.ChevronRight, null, ZiyuIconTokens.TrailingGlyph, tint = tokens.textSecondary.copy(alpha = .72f))
+            }
+            SettingsContentDivider()
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("当前字体", color = tokens.textSecondary, style = MaterialTheme.typography.labelSmall)
+                Text(
+                    if (health.loading) "正在读取…" else if (health.activeFont == "default") "系统默认" else health.activeFont.ifBlank { "尚未选择" },
+                    color = tokens.textPrimary,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (health.rebootRequired) {
+                    Text("字体变更等待重启生效", color = scheme.primary, style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
@@ -357,13 +392,14 @@ private fun SettingsOverviewCard(health: SystemHealthSnapshot, onClick: () -> Un
 
 @Composable
 private fun SettingsGroup(content: @Composable () -> Unit) {
-    val tokens = LocalMiuixTokens.current
-    Surface(
+    val tokens = LocalZiyuPaletteTokens.current
+    Card(
         modifier = Modifier.fillMaxWidth(),
         shape = ZiyuShapeTokens.Card,
-        color = tokens.cardBackground,
-        tonalElevation = 0.dp,
-        shadowElevation = ZiyuLayoutTokens.CardElevation,
+        colors = CardDefaults.cardColors(
+            containerColor = tokens.cardBackground,
+            contentColor = tokens.textPrimary,
+        ),
     ) {
         Column { content() }
     }
@@ -371,9 +407,17 @@ private fun SettingsGroup(content: @Composable () -> Unit) {
 
 @Composable
 private fun SettingsDivider() {
+    val layout = LocalZiyuThemeTokens.current.layout
     HorizontalDivider(
-        modifier = Modifier.padding(start = 74.dp, end = 18.dp),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .20f),
+        modifier = Modifier.padding(start = layout.compactPadding + 42.dp, end = layout.compactPadding),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .28f),
+    )
+}
+
+@Composable
+private fun SettingsContentDivider() {
+    HorizontalDivider(
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .28f),
     )
 }
 
@@ -398,60 +442,71 @@ private fun SettingsNavigationRow(
     subtitle: String,
     onClick: () -> Unit,
 ) {
-    val tokens = LocalMiuixTokens.current
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        color = androidx.compose.ui.graphics.Color.Transparent,
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 15.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    val tokens = LocalZiyuPaletteTokens.current
+    val style = LocalUiStyle.current
+    val layout = LocalZiyuThemeTokens.current.layout
+    val minHeight = 68.dp
+    val rowContent: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
+        Box(
+            modifier = Modifier.size(34.dp),
+            contentAlignment = Alignment.Center,
         ) {
             Surface(
-                modifier = Modifier.size(42.dp),
-                shape = RoundedCornerShape(13.dp),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = .10f),
+                modifier = Modifier.fillMaxSize(),
+                shape = ZiyuShapeTokens.Small,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = .075f),
                 contentColor = MaterialTheme.colorScheme.primary,
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    ZiyuGlyph(
-                        imageVector = icon,
-                        contentDescription = null,
-                        size = ZiyuIconTokens.SectionGlyph,
-                        opticalScale = iconScale,
-                    )
+                    ZiyuGlyph(icon, null, ZiyuIconTokens.SectionGlyph, opticalScale = iconScale)
                 }
             }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, color = tokens.textPrimary, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
-                Text(
-                    subtitle,
-                    color = tokens.textSecondary,
-                    fontSize = 12.sp,
-                    lineHeight = 18.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            ZiyuGlyph(
-                imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = null,
-                size = ZiyuIconTokens.TrailingGlyph,
-                tint = tokens.textSecondary.copy(alpha = .66f),
-            )
         }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(title, color = tokens.textPrimary, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+            Text(subtitle, color = tokens.textSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        Spacer(Modifier.width(8.dp))
+        ZiyuGlyph(Icons.Rounded.ChevronRight, null, ZiyuIconTokens.TrailingGlyph, tint = tokens.textSecondary.copy(alpha = .72f))
     }
+    when (style) {
+        UiStyle.MATERIAL -> Surface(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth().heightIn(min = minHeight),
+            color = Color.Transparent,
+        ) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = layout.compactPadding, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, content = rowContent)
+        }
+        UiStyle.MIUIX -> top.yukonga.miuix.kmp.basic.BasicComponent(
+            modifier = Modifier.fillMaxWidth().heightIn(min = minHeight),
+            insideMargin = PaddingValues(horizontal = layout.compactPadding, vertical = 9.dp),
+            onClick = onClick,
+            onClickLabel = title,
+            role = androidx.compose.ui.semantics.Role.Button,
+        ) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, content = rowContent) }
+        UiStyle.COUI -> io.github.suqi8.coui.kmp.basic.BasicComponent(
+            modifier = Modifier.fillMaxWidth().heightIn(min = minHeight),
+            insideMargin = PaddingValues(horizontal = layout.compactPadding, vertical = 9.dp),
+            onClick = onClick,
+            onClickLabel = title,
+            role = androidx.compose.ui.semantics.Role.Button,
+        ) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, content = rowContent) }
+        }
 }
 
 @Composable
 private fun pageList(content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+    val layout = LocalZiyuThemeTokens.current.layout
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, top = 8.dp, end = 20.dp, bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(
+            start = layout.pageHorizontal,
+            top = layout.pageTop,
+            end = layout.pageHorizontal,
+            bottom = maxOf(24.dp, layout.cardPadding),
+        ),
+        verticalArrangement = Arrangement.spacedBy(layout.cardGap),
         content = content,
     )
 }
@@ -486,91 +541,121 @@ private fun OverviewPage(model: SystemCenterViewModel) = pageList {
 private fun AppearancePage(settings: AppearanceSettings, actions: AppearanceActions) {
     var showThemePicker by rememberSaveable { mutableStateOf(false) }
     pageList {
-    item {
-        SettingCard("外观预览") {
-            Text("让文字更悦目", color = MaterialTheme.colorScheme.primary, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(5.dp))
-            Text("Aa 0123456789 · 字域", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp, lineHeight = 22.sp)
-            Spacer(Modifier.height(16.dp))
-            ChoiceRow(UiStyle.entries, settings.uiStyle, { it.label }, actions.setUiStyle)
-        }
-    }
-    item {
-        SettingCard("颜色与模式") {
-            Surface(
-                onClick = { showThemePicker = true },
-                modifier = Modifier.fillMaxWidth(),
-                shape = ZiyuShapeTokens.Medium,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            ) {
+        item {
+            SettingCard("界面风格") {
+                Text("让文字更悦目", color = LocalZiyuPaletteTokens.current.textPrimary, style = MaterialTheme.typography.headlineSmall)
+                Text("Aa 0123456789 · 字域", color = LocalZiyuPaletteTokens.current.textSecondary, style = MaterialTheme.typography.bodyMedium)
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 68.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text("深色模式", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                        Text("跟随系统、浅色或深色", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                    }
-                    Text(settings.themeMode.label, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.width(4.dp))
-                    Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                    Text("当前样式", color = LocalZiyuPaletteTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.width(8.dp))
+                    Text(settings.uiStyle.label, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                 }
+                ChoiceRow(UiStyle.entries, settings.uiStyle, { it.label }, actions.setUiStyle)
             }
-            Spacer(Modifier.height(13.dp))
-            Text("取色风格", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(7.dp))
-            ChoiceRow(KolorStyle.entries, settings.kolorStyle, { it.label }, actions.setKolorStyle)
         }
-    }
-    item {
-        SettingCard("主题色") {
-            Text(
-                if (settings.monetEnabled) "已跟随壁纸取色；关闭动态取色后可选择主题色。" else "为界面选择一种喜欢的颜色。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                lineHeight = 18.sp,
-            )
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup().padding(top = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                AccentOptions.forEach { option ->
-                    val active = settings.seedArgb == option.argb
-                    Column(
-                        Modifier.clip(RoundedCornerShape(16.dp)).selectable(
-                            selected = active,
-                            enabled = !settings.monetEnabled,
-                            role = Role.RadioButton,
-                            onClick = { actions.setSeedArgb(option.argb) },
-                        ).padding(horizontal = 5.dp, vertical = 5.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
+        item {
+            SettingCard("颜色与模式") {
+                Surface(
+                    onClick = { showThemePicker = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = ZiyuShapeTokens.Medium,
+                    color = Color.Transparent,
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 60.dp)
+                            .padding(horizontal = 4.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Surface(
-                            modifier = Modifier.size(46.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color(option.argb).copy(alpha = if (settings.monetEnabled) .35f else 1f),
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                if (active) Icon(Icons.Rounded.CheckCircle, null, tint = Color.White, modifier = Modifier.size(22.dp))
-                            }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("深色模式", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+                            Text("跟随系统、浅色或深色", color = LocalZiyuPaletteTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
                         }
-                        Text(option.label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        Text(settings.themeMode.label, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                        Spacer(Modifier.width(5.dp))
+                        ZiyuGlyph(Icons.Rounded.ChevronRight, null, ZiyuIconTokens.TrailingGlyph, tint = LocalZiyuPaletteTokens.current.textSecondary)
+                    }
+                }
+                SettingsContentDivider()
+                Text("取色风格", color = LocalZiyuPaletteTokens.current.textSecondary, style = MaterialTheme.typography.labelLarge)
+                ChoiceRow(KolorStyle.entries, settings.kolorStyle, { it.label }, actions.setKolorStyle)
+            }
+        }
+        item {
+            SettingCard("主题色") {
+                Text(
+                    if (settings.monetEnabled) "已跟随壁纸取色；关闭动态取色后可选择主题色。" else "为界面选择一种喜欢的颜色。",
+                    color = LocalZiyuPaletteTokens.current.textSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup().padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                ) {
+                    AccentOptions.forEach { option ->
+                        val active = settings.seedArgb == option.argb
+                        val muted = settings.monetEnabled
+                        Column(
+                            Modifier.clip(RoundedCornerShape(15.dp)).selectable(
+                                selected = active,
+                                enabled = !settings.monetEnabled,
+                                role = Role.RadioButton,
+                                onClick = { actions.setSeedArgb(option.argb) },
+                            ).padding(horizontal = 4.dp, vertical = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(5.dp),
+                        ) {
+                            Surface(
+                                modifier = Modifier.size(40.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                color = Color(option.argb).copy(alpha = if (muted) .35f else 1f),
+                                border = BorderStroke(
+                                    if (active) 2.dp else .75.dp,
+                                    if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f),
+                                ),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    if (active) {
+                                        Surface(
+                                            modifier = Modifier.size(22.dp),
+                                            shape = RoundedCornerShape(50),
+                                            color = Color.White,
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(17.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Text(
+                                option.label,
+                                color = if (active) LocalZiyuPaletteTokens.current.textPrimary else LocalZiyuPaletteTokens.current.textSecondary,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                        }
                     }
                 }
             }
         }
-    }
-    item {
-        SettingCard("视觉与显示") {
-            ToggleLine("Monet 动态取色", "跟随系统壁纸强调色", settings.monetEnabled, actions.setMonetEnabled)
-            ToggleLine("纯黑深色模式", "AMOLED 黑色背景", settings.amoledBlack, actions.setAmoledBlack)
-            ToggleLine("玻璃半透明", "为 Miuix 悬浮底栏启用 KSU 风格的玻璃效果", settings.glassEnabled, actions.setGlassEnabled)
-            ToggleLine("背景模糊", "模糊悬浮底栏后方的页面内容", settings.blurEnabled, actions.setBlurEnabled, settings.glassEnabled)
-            ToggleLine("悬浮底栏", "关闭后使用贴合屏幕底部的常规导航栏", settings.floatingDock, actions.setFloatingDock)
-            ToggleLine("高刷新率", "优先同分辨率高刷新模式", settings.highRefreshRate, actions.setHighRefreshRate)
+        item {
+            SettingCard("视觉与显示") {
+                ToggleLine("Monet 动态取色", "跟随系统壁纸强调色", settings.monetEnabled, actions.setMonetEnabled)
+                SettingsContentDivider()
+                ToggleLine("纯黑深色模式", "深色模式下使用 AMOLED 纯黑背景，浅色模式不受影响", settings.amoledBlack, actions.setAmoledBlack)
+                SettingsContentDivider()
+                ToggleLine("液态玻璃", "为当前主题的悬浮底栏启用半透明与折射效果", settings.glassEnabled, actions.setGlassEnabled, settings.floatingDock)
+                SettingsContentDivider()
+                ToggleLine("背景模糊", "可单独关闭模糊，保留玻璃的半透明与折射效果", settings.blurEnabled, actions.setBlurEnabled, settings.glassEnabled && settings.floatingDock)
+                SettingsContentDivider()
+                ToggleLine("悬浮底栏", "关闭后使用贴合屏幕底部的常规导航栏", settings.floatingDock, actions.setFloatingDock)
+                SettingsContentDivider()
+                ToggleLine("高刷新率", "优先同分辨率高刷新模式", settings.highRefreshRate, actions.setHighRefreshRate)
+            }
         }
-    }
     }
     if (showThemePicker) {
         ModalBottomSheet(
@@ -582,8 +667,8 @@ private fun AppearancePage(settings: AppearanceSettings, actions: AppearanceActi
                 Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 24.dp).padding(bottom = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("深色模式", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Text("选择界面的明暗显示方式", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                Text("深色模式", style = MaterialTheme.typography.titleLarge)
+                Text("选择界面的明暗显示方式", color = LocalZiyuPaletteTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(8.dp))
                 Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ThemeMode.entries.forEach { mode ->
@@ -595,19 +680,21 @@ private fun AppearancePage(settings: AppearanceSettings, actions: AppearanceActi
                         }
                         Row(
                             Modifier.fillMaxWidth().clip(ZiyuShapeTokens.Medium)
-                                .background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                .then(if (selected) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, ZiyuShapeTokens.Medium) else Modifier)
                                 .selectable(selected = selected, role = Role.RadioButton) {
                                     actions.setThemeMode(mode)
                                     showThemePicker = false
                                 }
-                                .heightIn(min = 68.dp).padding(horizontal = 18.dp, vertical = 12.dp),
+                                .heightIn(min = 62.dp)
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(mode.label, fontSize = 16.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
-                                Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                                Text(mode.label, style = MaterialTheme.typography.titleSmall, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
+                                Text(description, color = LocalZiyuPaletteTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
                             }
-                            if (selected) Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                            RadioButton(selected = selected, onClick = null, enabled = true)
                         }
                     }
                 }
@@ -758,92 +845,133 @@ private fun UpdatePage(model: SystemCenterViewModel) {
 
 @Composable
 private fun <T> ChoiceRow(entries: List<T>, selected: T, label: (T) -> String, onSelected: (T) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        entries.forEach { item ->
-            val active = item == selected
-            Surface(
-                modifier = Modifier.clip(RoundedCornerShape(15.dp)).selectable(
-                    selected = active,
-                    role = Role.RadioButton,
-                    onClick = { onSelected(item) },
-                ),
-                shape = RoundedCornerShape(15.dp),
-                color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-                contentColor = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-            ) {
-                Box(Modifier.heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
-                    Text(label(item), fontSize = 13.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium)
-                }
-            }
-        }
-    }
+    val selectedIndex = entries.indexOf(selected)
+    ZiyuSegmentedTabs(
+        labels = entries.map(label),
+        selectedIndex = selectedIndex.coerceAtLeast(0),
+        onSelected = { entries.getOrNull(it)?.let(onSelected) },
+    )
 }
 
 @Composable
 private fun ToggleLine(title: String, description: String, checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true) {
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).toggleable(
-            value = checked,
-            enabled = enabled,
-            role = Role.Switch,
-            onValueChange = onChange,
-        ).heightIn(min = 76.dp).padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else .45f))
-            Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else .45f), fontSize = 12.sp, lineHeight = 18.sp)
+    val style = LocalUiStyle.current
+    val layout = LocalZiyuThemeTokens.current.layout
+    val minHeight = when (style) {
+        UiStyle.MATERIAL -> 66.dp
+        UiStyle.MIUIX -> 62.dp
+        UiStyle.COUI -> 62.dp
+    }
+    val insideVertical = 9.dp
+    val nativeRowModifier = Modifier.fillMaxWidth().heightIn(min = minHeight).semantics(mergeDescendants = true) {
+        role = Role.Switch
+        toggleableState = ToggleableState(checked)
+        if (!enabled) disabled()
+    }
+    val content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
+        Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else .45f),
+            )
+            Text(
+                description,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else .45f),
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
-        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+        // Keep native thumb gestures functional. The row owns the single accessible
+        // switch node, while child pointer gestures invoke the same state callback.
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            enabled = enabled,
+            modifier = Modifier.clearAndSetSemantics {},
+        )
+    }
+    when (style) {
+        UiStyle.MATERIAL -> Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onChange,
+            ).heightIn(min = minHeight).padding(horizontal = layout.compactPadding, vertical = insideVertical),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content,
+        )
+        UiStyle.MIUIX -> top.yukonga.miuix.kmp.basic.BasicComponent(
+            modifier = nativeRowModifier,
+            insideMargin = PaddingValues(horizontal = layout.compactPadding, vertical = insideVertical),
+            onClick = { onChange(!checked) },
+            role = Role.Switch,
+            enabled = enabled,
+        ) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, content = content) }
+        UiStyle.COUI -> io.github.suqi8.coui.kmp.basic.BasicComponent(
+            modifier = nativeRowModifier,
+            insideMargin = PaddingValues(horizontal = layout.compactPadding, vertical = insideVertical),
+            onClick = { onChange(!checked) },
+            role = Role.Switch,
+            enabled = enabled,
+        ) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, content = content) }
     }
 }
 
 @Composable
 private fun SettingCard(title: String, content: @Composable () -> Unit) {
-    val tokens = LocalMiuixTokens.current
-    val dark = MaterialTheme.colorScheme.background.luminance() < .5f
-    Card(
-        shape = ZiyuShapeTokens.Card,
-        colors = CardDefaults.cardColors(containerColor = tokens.cardBackground),
-        border = BorderStroke(
-            0.5.dp,
-            if (dark) Color.Transparent else ZiyuLayoutTokens.LightCardOutline,
-        ),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(ZiyuLayoutTokens.CardPadding)) {
-            Text(title, fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(12.dp))
-            content()
+    val tokens = LocalZiyuPaletteTokens.current
+    val layout = LocalZiyuThemeTokens.current.layout
+    if (LocalUiStyle.current == UiStyle.MATERIAL) {
+        Card(
+            shape = ZiyuShapeTokens.Card,
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                contentColor = tokens.textPrimary,
+            ),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(layout.cardPadding)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(10.dp))
+                content()
+            }
+        }
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            SettingsSectionLabel(title)
+            SettingsGroup {
+                Column(Modifier.fillMaxWidth().padding(layout.cardPadding)) {
+                    content()
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun StatusCard(title: String, subtitle: String, level: HealthLevel, loading: Boolean, content: @Composable () -> Unit) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
+    val layout = LocalZiyuThemeTokens.current.layout
+    val style = LocalUiStyle.current
     val accent = when (level) { HealthLevel.HEALTHY -> tokens.success; HealthLevel.WARNING -> tokens.warning; HealthLevel.ERROR -> MaterialTheme.colorScheme.error }
-    val dark = MaterialTheme.colorScheme.background.luminance() < .5f
     Card(
         shape = ZiyuShapeTokens.Large,
         colors = CardDefaults.cardColors(
-            containerColor = if (!loading && level == HealthLevel.HEALTHY) tokens.successContainer else tokens.cardBackground,
-        ),
-        border = BorderStroke(
-            0.5.dp,
-            if (dark) Color.Transparent else ZiyuLayoutTokens.LightCardOutline,
+            containerColor = if (style == UiStyle.MATERIAL) MaterialTheme.colorScheme.surfaceContainerLow else tokens.cardBackground,
+            contentColor = tokens.textPrimary,
         ),
     ) {
-        Column(Modifier.fillMaxWidth().padding(ZiyuLayoutTokens.CardPadding)) {
+        Column(Modifier.fillMaxWidth().padding(layout.cardPadding)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(Modifier.size(38.dp), RoundedCornerShape(13.dp), color = accent.copy(alpha = .11f), contentColor = accent) {
+                Surface(Modifier.size(34.dp), ZiyuShapeTokens.Medium, color = accent.copy(alpha = .10f), contentColor = accent) {
                     Box(contentAlignment = Alignment.Center) { if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(when (level) { HealthLevel.HEALTHY -> Icons.Rounded.CheckCircle; HealthLevel.WARNING -> Icons.Rounded.Info; HealthLevel.ERROR -> Icons.Rounded.Error }, null, Modifier.size(21.dp)) }
                 }
-                Spacer(Modifier.width(10.dp)); Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(title, fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold); Text(if (loading) "正在读取状态…" else subtitle, color = accent, fontSize = 12.sp, lineHeight = 18.sp) }
+                Spacer(Modifier.width(10.dp)); Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) { Text(title, style = MaterialTheme.typography.titleSmall); Text(if (loading) "正在读取状态…" else subtitle, color = tokens.textSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
-            Spacer(Modifier.height(13.dp)); content()
+            Spacer(Modifier.height(8.dp)); SettingsContentDivider(); content()
         }
     }
 }

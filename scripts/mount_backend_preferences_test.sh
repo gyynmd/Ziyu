@@ -94,22 +94,26 @@ hook post-mount absent none pass
 [[ "$(value "$MOD" active_backend)" == self ]] || fail 'private self-mount fallback did not activate'
 [[ "$(value "$MOD" verification)" == passed ]] || fail 'self-mount was reported before verification'
 
-# A provider route failure remains external and cannot mount the self backend.
+# Automatic provider route failure falls back to self and verifies before success.
 make_module "$TMP/provider-failed"
 hook post-fs-data available hybrid-mount pass
-if hook post-mount available hybrid-mount fail; then fail 'provider failure was accepted'; fi
-[[ "$(value "$MOD" selected_backend)" == external ]] || fail 'provider failure changed the selected mode'
-[[ "$(value "$MOD" active_backend)" == none ]] || fail 'failed provider was reported active'
-[[ "$(value "$MOD" fallback_used)" == 0 ]] || fail 'provider failure switched to self'
-[[ "$(value "$MOD" verification)" == failed ]] || fail 'provider failure was not recorded'
-[[ ! -f "$MOD/config/test-self-mounted" ]] || fail 'provider failure ran an unselected self backend'
+hook post-mount available hybrid-mount fail
+[[ "$(value "$MOD" selected_backend)" == self ]] || fail 'provider failure did not select self fallback'
+[[ "$(value "$MOD" active_backend)" == self ]] || fail 'unverified provider was reported active'
+[[ "$(value "$MOD" fallback_used)" == 1 ]] || fail 'provider failure did not record fallback'
+[[ "$(value "$MOD" verification)" == passed ]] || fail 'self fallback was reported before verification'
+[[ -f "$MOD/config/test-self-mounted" ]] || fail 'provider failure did not try self mounting'
 
-# An absent provider in automatic mode fails without silently mounting fonts.
+# An absent provider in automatic mode stages self-mount for the root manager's mount phase.
 make_module "$TMP/provider-absent"
-if hook post-fs-data absent none fail; then fail 'absent provider was accepted'; fi
-[[ "$(value "$MOD" selected_backend)" == external ]] || fail 'absent provider changed automatic mode'
-[[ "$(value "$MOD" active_backend)" == none ]] || fail 'absent provider was reported active'
-[[ ! -f "$MOD/config/test-self-mounted" ]] || fail 'absent provider ran an unselected self backend'
+hook post-fs-data absent none pass
+[[ "$(value "$MOD" selected_backend)" == self ]] || fail 'absent provider did not select self fallback'
+[[ "$(value "$MOD" active_backend)" == none ]] || fail 'self fallback mounted before the KernelSU mount hook'
+[[ "$(value "$MOD" fallback_used)" == 1 ]] || fail 'absent provider fallback was not recorded'
+[[ ! -f "$MOD/config/test-self-mounted" ]] || fail 'absent provider mounted before the KernelSU mount hook'
+hook post-mount absent none pass
+[[ "$(value "$MOD" active_backend)" == self ]] || fail 'absent provider did not activate self after the mount hook'
+[[ "$(value "$MOD" verification)" == passed ]] || fail 'absent provider self route was not verified'
 
 # Previous-boot observations are historical and must not be exposed as live.
 make_module "$TMP/stale"

@@ -31,7 +31,7 @@ import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
 import io.github.xgl34222220.ziyu.ui.logs.LogsActions
 import io.github.xgl34222220.ziyu.ui.logs.LogsRoute
 import io.github.xgl34222220.ziyu.ui.logs.toLogsUiState
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuTheme
 import io.github.xgl34222220.ziyu.ui.setup.InitializationScreen
 
@@ -62,7 +62,7 @@ internal fun TaskCenterHost() {
 
     ZiyuTheme(appearance) {
         val pageBackground = if (appearance.uiStyle != UiStyle.MATERIAL) {
-            LocalMiuixTokens.current.pageBackground
+            LocalZiyuPaletteTokens.current.pageBackground
         } else {
             MaterialTheme.colorScheme.background
         }

@@ -32,6 +32,12 @@ internal data class FontTaskNotificationSpec(
 ) {
     val ongoing: Boolean get() = state == "queued" || state == "running"
     val title: String get() = when (kind) {
+        "delete" -> when (state) {
+            "success" -> "字体已删除"
+            "failed" -> "字体删除失败"
+            "cancelled" -> "字体删除已中止"
+            else -> "正在后台删除字体"
+        }
         "mix" -> when (state) {
             "success" -> "组合字体已生成"
             "failed" -> "组合字体生成失败"
@@ -57,7 +63,7 @@ internal object FontTaskNotificationController {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(FONT_TASK_CHANNEL, "字体处理进度", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "显示字体生成与应用的进度"
+                description = "显示字体生成、应用与删除的进度"
                 enableVibration(false)
                 setSound(null, null)
             },

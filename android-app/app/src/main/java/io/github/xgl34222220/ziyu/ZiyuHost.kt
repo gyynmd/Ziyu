@@ -24,8 +24,9 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.xgl34222220.ziyu.ui.appearance.AppearanceViewModel
-import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.design.ZiyuCircularProgressIndicator as CircularProgressIndicator
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuTheme
 import io.github.xgl34222220.ziyu.ui.setup.InitializationScreen
 
@@ -45,11 +46,7 @@ internal fun ZiyuHost() {
     }
 
     ZiyuTheme(appearance) {
-        val pageBackground = if (appearance.uiStyle != UiStyle.MATERIAL) {
-            LocalMiuixTokens.current.pageBackground
-        } else {
-            MaterialTheme.colorScheme.background
-        }
+        val pageBackground = LocalZiyuPaletteTokens.current.pageBackground
         val useDarkSystemBars = pageBackground.luminance() < .5f
         val context = LocalContext.current
         val view = LocalView.current
@@ -100,12 +97,12 @@ internal fun InitializationLoadingScreen() {
             horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
         ) {
-            androidx.compose.material3.Text(
+            Text(
                 text = "字域",
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.onBackground,
             )
-            androidx.compose.material3.CircularProgressIndicator()
+            CircularProgressIndicator()
         }
     }
 }

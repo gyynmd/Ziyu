@@ -15,9 +15,8 @@ printf 'id=LuoShu\nversion=test\nversionCode=1\n' > "$MOD/module.prop"
 printf 'DemoFont\n' > "$MOD/config/active_font.conf"
 printf 'fixture-font\n' > "$MOD/.luoshu-payload/system/fonts/Roboto-Regular.ttf"
 
-# The provider owns its active mounts. If Hybrid's published font route cannot
-# be verified, report failure in the selected external mode. Do not start an
-# unselected self backend or mutate the provider's configuration and runtime.
+# If Hybrid's route cannot be verified in automatic mode, try the self backend.
+# Its route must pass verification; the fallback does not rewrite provider config.
 run_hook() {
   local stage="$1" verify="$2"
   MODDIR="$MOD" MODULE_DIR="$MOD" META_MODULE_DIR="$META" \
@@ -37,11 +36,11 @@ run_hook post-fs-data pass
 [[ "$(value "$MOD" selected_backend)" == external ]] || fail 'Hybrid should be selected as the boot provider'
 [[ "$(value "$MOD" active_backend)" == none ]] || fail 'provider mount must wait for its mount stage'
 
-if run_hook post-mount fail; then fail 'failed Hybrid verification was accepted'; fi
-[[ "$(value "$MOD" selected_backend)" == external ]] || fail 'failed Hybrid verification changed the selected mode'
-[[ "$(value "$MOD" active_backend)" == none ]] || fail 'failed provider was reported active'
-[[ "$(value "$MOD" fallback_used)" == 0 ]] || fail 'failed provider switched to self'
-[[ "$(value "$MOD" verification)" == failed ]] || fail 'provider failure was not recorded'
-[[ ! -f "$MOD/config/test-self-mounted" ]] || fail 'provider failure ran an unselected self backend'
+run_hook post-mount fail
+[[ "$(value "$MOD" selected_backend)" == self ]] || fail 'failed Hybrid route did not select self fallback'
+[[ "$(value "$MOD" active_backend)" == self ]] || fail 'unverified provider was reported active'
+[[ "$(value "$MOD" fallback_used)" == 1 ]] || fail 'failed provider did not record fallback'
+[[ "$(value "$MOD" verification)" == passed ]] || fail 'self route was not verified'
+[[ -f "$MOD/config/test-self-mounted" ]] || fail 'provider failure did not try the self backend'
 
-printf 'Hybrid route failure preserves external mode without provider unload or self mounting.\n'
+printf 'Hybrid route failure tries self mounting and reports success only after route verification.\n'

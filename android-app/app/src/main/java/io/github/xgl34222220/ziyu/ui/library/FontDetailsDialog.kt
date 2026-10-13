@@ -24,17 +24,17 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.Button
+import io.github.xgl34222220.ziyu.ui.design.ZiyuButton as Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuHorizontalDivider as HorizontalDivider
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIcon as Icon
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
+import io.github.xgl34222220.ziyu.ui.design.ZiyuModalBottomSheet as ModalBottomSheet
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuTextButton as TextButton
+import io.github.xgl34222220.ziyu.ui.design.rememberZiyuModalBottomSheetState as rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,7 +59,7 @@ import io.github.xgl34222220.ziyu.FontItem
 import io.github.xgl34222220.ziyu.NativeFontPreview
 import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
 import io.github.xgl34222220.ziyu.ui.font.fontCapabilityLabel
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuLayoutTokens
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuLoadingSkeleton
 
@@ -81,7 +81,7 @@ internal fun FontDetailsDialogRoute(
     onApply: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     val miuix = style == UiStyle.MIUIX
     val container = if (miuix) tokens.cardBackground else scheme.surface
     val elevated = if (miuix) tokens.elevatedCardBackground else scheme.surfaceContainerHigh
@@ -123,10 +123,9 @@ internal fun FontDetailsDialogRoute(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        sheetGesturesEnabled = false,
+        sheetGesturesEnabled = true,
         shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
         containerColor = container,
-        dragHandle = null,
         scrimColor = Color.Black.copy(alpha = .20f),
     ) {
         Column(
@@ -161,7 +160,7 @@ internal fun FontDetailsDialogRoute(
                         valid = font.valid,
                     )
                 }
-                IconButton(onClick = onDismiss) {
+                IconButton(onClick = sheetState::dismiss) {
                     Icon(Icons.Rounded.Close, contentDescription = "关闭字体详情", tint = secondaryText)
                 }
             }

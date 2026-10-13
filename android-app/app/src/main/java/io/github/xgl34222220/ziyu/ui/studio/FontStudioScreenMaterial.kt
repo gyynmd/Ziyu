@@ -25,18 +25,18 @@ import androidx.compose.material.icons.rounded.FontDownload
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.Button
+import io.github.xgl34222220.ziyu.ui.design.ZiyuButton as Button
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuCard as Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import io.github.xgl34222220.ziyu.ui.design.ZiyuCircularProgressIndicator as CircularProgressIndicator
+import io.github.xgl34222220.ziyu.ui.design.ZiyuHorizontalDivider as HorizontalDivider
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIcon as Icon
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIconButton as IconButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuLinearProgressIndicator as LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuOutlinedButton as OutlinedButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -57,6 +57,7 @@ import io.github.xgl34222220.ziyu.ui.font.fontCapabilityLabel
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuHeaderAction
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuTopBar
 import io.github.xgl34222220.ziyu.ui.theme.LocalDockContentPadding
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuThemeTokens
 import kotlin.math.roundToInt
 
 @Composable
@@ -65,6 +66,7 @@ internal fun FontStudioScreenMaterial(
     actions: FontStudioActions,
     topAction: @Composable () -> Unit,
 ) {
+    val layout = LocalZiyuThemeTokens.current.layout
     val applyRequester = remember { BringIntoViewRequester() }
     LaunchedEffect(state.busy, state.taskState) {
         if (state.busy || state.taskState == "success" || state.taskState == "failed") {
@@ -74,11 +76,11 @@ internal fun FontStudioScreenMaterial(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            start = ZiyuLayoutTokens.PageHorizontal,
-            end = ZiyuLayoutTokens.PageHorizontal,
-            bottom = maxOf(LocalDockContentPadding.current, ZiyuLayoutTokens.FloatingDockSafeBottom),
+            start = layout.pageHorizontal,
+            end = layout.pageHorizontal,
+            bottom = maxOf(LocalDockContentPadding.current, layout.dockSafeBottom),
         ),
-        verticalArrangement = Arrangement.spacedBy(ZiyuLayoutTokens.ItemGap),
+        verticalArrangement = Arrangement.spacedBy(layout.itemGap),
     ) {
         item { MaterialStudioHeader(state.loading, actions.refresh, topAction) }
         item { MaterialCompositionOverview(state, actions) }
@@ -140,7 +142,7 @@ private fun MaterialStudioHeader(loading: Boolean, onRefresh: () -> Unit, topAct
 private fun MaterialCompositionOverview(state: FontStudioUiState, actions: FontStudioActions) {
     Card(
         shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .84f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
         Column(Modifier.padding(20.dp)) {
             Text("组合你的专属字体", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
@@ -149,7 +151,7 @@ private fun MaterialCompositionOverview(state: FontStudioUiState, actions: FontS
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .62f),
+                color = Color.Transparent,
             ) {
                 StudioSelectionPreview(state.slots)
             }
@@ -244,7 +246,7 @@ private fun MaterialSlotCard(
     val font = slotState.font
     Card(
         shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .84f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
         Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -299,7 +301,7 @@ private fun MaterialSlotCard(
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .62f),
+                    color = Color.Transparent,
                 ) {
                     NativeFontPreview(
                         font = font,
@@ -335,7 +337,7 @@ private fun MaterialCoverageCard(state: FontStudioUiState, actions: FontStudioAc
     val metrics = probe.metrics.takeIf { probe.fontId == fontId }
     Card(
         shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .84f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
         Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -388,7 +390,7 @@ private fun MaterialFinalAction(state: FontStudioUiState, actions: FontStudioAct
     val selectionReady = state.slots.size == MixSlot.entries.size && state.slots.all { it.font?.valid == true }
     Card(
         shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .84f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
         Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

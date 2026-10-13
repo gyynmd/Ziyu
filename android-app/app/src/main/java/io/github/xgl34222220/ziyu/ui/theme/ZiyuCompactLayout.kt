@@ -3,15 +3,14 @@ package io.github.xgl34222220.ziyu.ui.theme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.background
-import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TopAppBar as MaterialTopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.graphics.Color
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,49 +20,66 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.TextUnit
 import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
+import top.yukonga.miuix.kmp.basic.SmallTopAppBar as MiuixSmallTopAppBar
+import top.yukonga.miuix.kmp.basic.TopAppBar as MiuixLargeTopAppBar
 
-/** A flexible title column keeps long titles clear of every action at large font scales. */
+/** Root-page title treatment follows the active design system while preserving action slots. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ZiyuTopBar(
     title: String,
     modifier: Modifier = Modifier,
-    titleSize: TextUnit = ZiyuTypographyTokens.PageTitle,
+    titleSize: TextUnit = 22.sp,
     actions: @Composable () -> Unit = {},
 ) {
-    val tokens = LocalMiuixTokens.current
     val style = LocalUiStyle.current
-    val titleFontSize = when (style) {
-        UiStyle.MATERIAL -> MaterialTheme.typography.headlineSmall.fontSize
-        UiStyle.MIUIX -> titleSize
-        UiStyle.COUI -> MaterialTheme.typography.titleLarge.fontSize
-    }
-    val couiHeader = style == UiStyle.COUI
-    Row(
-        modifier = modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 76.dp)
-            .then(
-                if (couiHeader) Modifier.clip(MaterialTheme.shapes.medium)
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                    .padding(horizontal = 12.dp)
-                else Modifier,
-            )
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(
-            text = title,
-            modifier = Modifier.weight(1f),
-            color = tokens.textPrimary,
-            fontSize = titleFontSize,
-            lineHeight = titleSize * 1.15f,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+    if (style == UiStyle.MIUIX) {
+        MiuixLargeTopAppBar(
+            title = title,
+            largeTitle = title,
+            modifier = modifier.fillMaxWidth(),
+            color = Color.Transparent,
+            titleColor = LocalZiyuPaletteTokens.current.textPrimary,
+            largeTitleColor = LocalZiyuPaletteTokens.current.textPrimary,
+            titlePadding = 0.dp,
+            actionIconPadding = 0.dp,
+            actions = { actions() },
         )
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) { actions() }
+        return
     }
+    if (style == UiStyle.COUI) {
+        io.github.suqi8.coui.kmp.basic.SmallTopAppBar(
+            title = title,
+            modifier = modifier.fillMaxWidth(),
+            color = Color.Transparent,
+            titleColor = LocalZiyuPaletteTokens.current.textPrimary,
+            showDivider = false,
+            titlePadding = 0.dp,
+            actionIconPadding = 0.dp,
+            actions = { actions() },
+        )
+        return
+    }
+    val titleFontSize = titleSize
+    MaterialTopAppBar(
+        title = {
+            Text(
+                text = title,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = titleFontSize,
+                lineHeight = titleFontSize * 1.27f,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        modifier = modifier.fillMaxWidth(),
+        actions = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) { actions() } },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+    )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ZiyuDetailBar(
     title: String,
@@ -71,43 +87,57 @@ internal fun ZiyuDetailBar(
     modifier: Modifier = Modifier,
     actions: @Composable () -> Unit = {},
 ) {
-    val tokens = LocalMiuixTokens.current
     val style = LocalUiStyle.current
+    if (style == UiStyle.MIUIX) {
+        MiuixSmallTopAppBar(
+            title = title,
+            modifier = modifier.fillMaxWidth(),
+            color = Color.Transparent,
+            titleColor = LocalZiyuPaletteTokens.current.textPrimary,
+            navigationIcon = { ZiyuHeaderAction(Icons.Rounded.ArrowBack, "返回", onBack, LocalZiyuPaletteTokens.current.cardBackground, contentColor = LocalZiyuPaletteTokens.current.textPrimary) },
+            actions = { actions() },
+        )
+        return
+    }
+    if (style == UiStyle.COUI) {
+        io.github.suqi8.coui.kmp.basic.SmallTopAppBar(
+            title = title,
+            modifier = modifier.fillMaxWidth(),
+            color = Color.Transparent,
+            titleColor = LocalZiyuPaletteTokens.current.textPrimary,
+            showDivider = false,
+            navigationIcon = { ZiyuHeaderAction(Icons.Rounded.ArrowBack, "返回", onBack, LocalZiyuPaletteTokens.current.cardBackground, contentColor = LocalZiyuPaletteTokens.current.textPrimary) },
+            actions = { actions() },
+        )
+        return
+    }
     val titleFontSize = when (style) {
         UiStyle.MATERIAL -> MaterialTheme.typography.titleLarge.fontSize
         UiStyle.MIUIX -> ZiyuTypographyTokens.DetailTitle
         UiStyle.COUI -> MaterialTheme.typography.titleLarge.fontSize
     }
-    val couiHeader = style == UiStyle.COUI
-    Row(
-        modifier = modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 64.dp)
-            .then(
-                if (couiHeader) Modifier.clip(MaterialTheme.shapes.medium)
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                    .padding(horizontal = 8.dp)
-                else Modifier,
+    MaterialTopAppBar(
+        title = {
+            Text(
+                text = title,
+                fontSize = titleFontSize,
+                lineHeight = titleFontSize * 1.27f,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        ZiyuHeaderAction(
-            icon = Icons.Rounded.ArrowBack,
-            contentDescription = "返回",
-            onClick = onBack,
-            containerColor = tokens.cardBackground,
-            contentColor = tokens.textPrimary,
-        )
-        Text(
-            text = title,
-            modifier = Modifier.weight(1f),
-            color = tokens.textPrimary,
-            fontSize = titleFontSize,
-            lineHeight = 34.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) { actions() }
-    }
+        },
+        modifier = modifier.fillMaxWidth(),
+        navigationIcon = {
+            ZiyuHeaderAction(
+                icon = Icons.Rounded.ArrowBack,
+                contentDescription = "返回",
+                onClick = onBack,
+                containerColor = LocalZiyuPaletteTokens.current.cardBackground,
+                contentColor = LocalZiyuPaletteTokens.current.textPrimary,
+            )
+        },
+        actions = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) { actions() } },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+    )
 }

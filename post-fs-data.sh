@@ -14,12 +14,38 @@ if [ -n "$_soft_boot" ] &&
     exit 1
 fi
 
+# A module update can install this hook after an older soft-reboot cleanup hook
+# ran. Recheck provider evidence before activating the pending generation.
+if [ -n "$_soft_boot" ] && \
+   [ "$(sed -n 's/^boot_id=//p' "$_soft_stage" 2>/dev/null | head -n1)" = "$_soft_boot" ] && \
+   [ -f "$MODDIR/common/mount_provider_reload.sh" ]; then
+    . "$MODDIR/common/mount_provider_reload.sh"
+    if ! ziyu_provider_reload_check "$MODDIR" reload; then
+        printf 'boot_id=%s\nstate=failed\nreason=%s\n' "$_soft_boot" \
+            "${PROVIDER_RELOAD_REASON:-provider-reload-cleanup-unconfirmed}" > "$_soft_stage"
+        printf '[TEMP-ROOT] pending payload retained: %s\n' "${PROVIDER_RELOAD_REASON:-unknown}" \
+            >> "$MODDIR/logs/mount-backend.log"
+        exit 1
+    fi
+fi
+
 # Manual exclusions are checked before even activating the pending generation.
 [ ! -f "$MODDIR/common/skip_mount_ownership.sh" ] || . "$MODDIR/common/skip_mount_ownership.sh"
 if [ -e "$MODDIR/disable" ] || [ -e "$MODDIR/remove" ] || \
    { type ziyu_foreign_skip_mount_present >/dev/null 2>&1 && ziyu_foreign_skip_mount_present "$MODDIR"; }; then
     MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/mount_backend_runtime.sh" hook post-fs-data
     exit $?
+fi
+
+# Capture only proven stock views before any provider sees our font payload.
+# This never mounts/unmounts and may defer without blocking the existing boot.
+_stock_pyroot="$MODDIR/common/python"
+if [ -x "$_stock_pyroot/bin/luoshu-python" ] && [ -f "$MODDIR/common/stock_font_snapshot.py" ]; then
+    PYTHONHOME="$_stock_pyroot" \
+    PYTHONPATH="$MODDIR/common:$_stock_pyroot/lib/python3.14:$_stock_pyroot/lib/python3.14/site-packages" \
+    LD_LIBRARY_PATH="$_stock_pyroot/lib:$_stock_pyroot/lib/python3.14/lib-dynload${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$_stock_pyroot/bin/luoshu-python" "$MODDIR/common/stock_font_snapshot.py" "$MODDIR" \
+        >> "$MODDIR/logs/stock-font-snapshot.log" 2>&1
 fi
 
 # Activate a previously prepared payload before exposing any module files.

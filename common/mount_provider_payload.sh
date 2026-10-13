@@ -14,12 +14,38 @@ _zpp_log() {
         >> "$_zpp_module/logs/mount-backend.log" 2>/dev/null || true
 }
 
+# Validate both the canonical tree and its provider-specific projection. Font
+# aliases share digest reads in the Python verifier; the portable path remains available.
+ziyu_provider_payload_verify() (
+    _zpp_module="$1"
+    _zpp_verify_root="$2"
+    _zpp_verify_layout="${3:-nomount-partition-roots}"
+    if type ziyu_current_payload_font >/dev/null 2>&1; then
+        _zpp_font=$(ziyu_current_payload_font "$_zpp_module")
+    else
+        _zpp_font=$(head -n1 "$_zpp_module/config/active_font.conf" 2>/dev/null | tr -d '\r\n')
+    fi
+    [ "$_zpp_font" != default ] || return 0
+    if [ ! -s "$_zpp_module/config/font-payload-manifest.conf" ]; then
+        # Universal/classic payloads have their own integrity contracts.
+        [ "$(sed -n 's/^core=//p' "$_zpp_module/config/font_runtime_legacy_v14_4.conf" 2>/dev/null | head -n1)" != physical-safe-v1 ] && return 0
+        _zpp_log 'verification refused: physical payload manifest missing'
+        return 1
+    fi
+    . "$_zpp_module/common/module_update_state.sh" || return 1
+    if ! luoshu_update_verify_manifest "$_zpp_module" "$_zpp_verify_root" 0 "$_zpp_verify_layout"; then
+        _zpp_log "verification failed root=$_zpp_verify_root layout=$_zpp_verify_layout reason=${LUOSHU_UPDATE_FAILURE_REASON:-unknown}"
+        return 1
+    fi
+)
+
 # Recover an interrupted multi-partition publication before exposing a new tree.
 ziyu_provider_payload_recover() (
     _zpp_root="$1"
     _zpp_journal="$_zpp_root/.ziyu-state/provider-publish.journal"
     [ -f "$_zpp_journal" ] || return 0
     _zpp_committed="$_zpp_root/.ziyu-state/provider-publish.committed"
+    _zpp_pending_receipt="$_zpp_root/.ziyu-state/provider-published.next"
     _zpp_bad=0
     while IFS='|' read -r _zpp_target _zpp_backup _zpp_stage _zpp_had_target; do
         _zpp_owned_path "$_zpp_root" "$_zpp_target" && \
@@ -37,6 +63,11 @@ ziyu_provider_payload_recover() (
         rm -rf "$_zpp_stage" || _zpp_bad=1
     done < "$_zpp_journal"
     [ "$_zpp_bad" -eq 0 ] || return 1
+    if [ -f "$_zpp_committed" ] && [ -f "$_zpp_pending_receipt" ]; then
+        mv -f "$_zpp_pending_receipt" "$_zpp_root/.ziyu-state/provider-published.conf" || return 1
+    else
+        rm -f "$_zpp_pending_receipt" || return 1
+    fi
     rm -f "$_zpp_journal" "$_zpp_committed"
 )
 
@@ -87,12 +118,21 @@ ziyu_provider_payload_publish() (
         fi
         mkdir -p "$_zpp_destination" || return 1
         [ -d "$_zpp_payload/$_zpp_part" ] || continue
-        cp -af "$_zpp_payload/$_zpp_part/." "$_zpp_destination/" || return 1
+        # Immutable font aliases remain regular files. Hard links avoid expanding
+        # one font into many copies before a copying provider scans the tree.
+        if ! cp -al "$_zpp_payload/$_zpp_part/." "$_zpp_destination/" 2>/dev/null; then
+            rm -rf "$_zpp_destination" || return 1
+            mkdir -p "$_zpp_destination" || return 1
+            cp -af "$_zpp_payload/$_zpp_part/." "$_zpp_destination/" || return 1
+        fi
     done
     chmod -R u=rwX,go=rX "$_zpp_stage" || return 1
     chmod 0755 "$_zpp_stage/system/bin/洛书" "$_zpp_stage/system/bin/luoshud" \
         "$_zpp_stage/system/bin/luoshu-history" "$_zpp_stage/system/bin/luoshu-health" \
         "$_zpp_stage/system/bin/luoshu-backup" 2>/dev/null || true
+    # One content pass on the final projection proves the copied/hard-linked
+    # bytes against the frozen canonical manifest; don't hash it twice here.
+    ziyu_provider_payload_verify "$_zpp_module" "$_zpp_stage" "$_zpp_layout" || return 1
     : > "$_zpp_journal" || return 1
     for _zpp_part in $_zpp_parts; do
         _zpp_target="$_zpp_root/$_zpp_part"
@@ -111,12 +151,15 @@ ziyu_provider_payload_publish() (
         mv "$_zpp_candidate" "$_zpp_target" || { ziyu_provider_payload_recover "$_zpp_root"; return 1; }
     done
     # The receipt is committed only after every destination is installed.
-    printf 'boot_id=%s\nlayout=%s\nsource=%s\n' \
-        "${_lbr_boot:-unknown}" "$_zpp_layout" "$_zpp_payload_kind" > "$_zpp_receipt.tmp" || {
+    _zpp_manifest_sha=$(sha256sum "$_zpp_module/config/font-payload-manifest.conf" 2>/dev/null | awk '{print $1}')
+    _zpp_request=$(sed -n 's/^requestId=//p' "$_zpp_module/config/font-payload-activated.conf" 2>/dev/null | head -n1)
+    printf 'schema=ziyu-provider-publication-v2\nboot_id=%s\nlayout=%s\nsource=%s\nmanifest_sha256=%s\nrequest_id=%s\n' \
+        "${_lbr_boot:-unknown}" "$_zpp_layout" "$_zpp_payload_kind" "$_zpp_manifest_sha" "$_zpp_request" \
+        > "$_zpp_state/provider-published.next" || {
         ziyu_provider_payload_recover "$_zpp_root"; return 1;
     }
-    mv -f "$_zpp_receipt.tmp" "$_zpp_receipt" || { ziyu_provider_payload_recover "$_zpp_root"; return 1; }
     : > "$_zpp_state/provider-publish.committed" || { ziyu_provider_payload_recover "$_zpp_root"; return 1; }
     ziyu_provider_payload_recover "$_zpp_root" || return 1
+    _zpp_log "published source=$_zpp_payload_kind layout=$_zpp_layout manifest=$_zpp_manifest_sha request=$_zpp_request"
     rm -rf "$_zpp_stage"
 )

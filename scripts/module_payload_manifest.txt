@@ -4,6 +4,7 @@
 common/app_bridge.sh
 common/temporary_root_mode.sh
 common/soft_reboot.sh
+common/mount_provider_reload.sh
 common/mount_diagnostics.sh
 common/mount_overlay_layer.sh
 common/app_installer.sh
@@ -74,6 +75,8 @@ common/font_inventory_scan.py
 common/font_layout_diagnostic.py
 common/font_layout_diagnostic.sh
 common/font_partition_compat_report.sh
+common/font_scan_profile.py
+common/stock_font_snapshot.py
 common/font_slot_coverage.py
 common/stock_inventory_scan.py
 common/font_library_cache.sh
@@ -126,6 +129,7 @@ common/mount_compat.sh
 common/mount_compat_base.sh
 common/meta_mount_detection.sh
 common/mount_backend_runtime.sh
+common/mount_backend_state.sh
 common/mount_backend_policy.sh
 common/mount_provider_detection.sh
 common/mount_provider_payload.sh
@@ -169,11 +173,8 @@ licenses
 LICENSE
 NOTICE.md
 THIRD_PARTY_NOTICES.md
-README.md
-docs/MOUNT_FLOW.md
-docs/MODULE_UPDATE.md
-更新日志/CHANGELOG.md
-更新日志/RELEASE_NOTES_ziyu-v1.3.0.md
+# User/developer documentation stays in GitHub, not the installed module.
+# Keep runtime version_notes.conf and all license/provenance documents above.
 customize.sh
 module.prop
 icon/icon.png

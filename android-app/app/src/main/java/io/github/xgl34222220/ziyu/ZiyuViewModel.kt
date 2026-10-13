@@ -358,7 +358,18 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
                 append("\n验证结果：${data.optString("verification", "pending")}")
                 val lastError = data.optString("lastError")
                 if (lastError.isNotBlank() && lastError != "none" && lastError != "provider-scan-pending") {
-                    append("\n状态原因：$lastError")
+                    val reason = when {
+                        lastError.contains("mountify-soft-reload-unavailable") ->
+                            "Mountify 未重新扫描字体，软重启兼容检查未通过；待应用字体已保留。"
+                        lastError == "provider-published-payload-invalid" ->
+                            "交给元模块的字体文件与本次负载不一致，请导出日志联系维护者。"
+                        lastError == "provider-publish-failed" ->
+                            "字体负载未能交给元模块，请导出日志查看具体原因。"
+                        lastError == "external-route-verification-failed" ->
+                            "元模块已被检测到，但系统实际字体路径未通过验证。"
+                        else -> lastError
+                    }
+                    append("\n状态原因：$reason")
                 }
                 if (data.optBoolean("pending")) append(if (snapshot.temporaryRootMode) "\n等待 KernelSU 软重启后的挂载验证。" else "\n等待完整重启后的挂载验证。")
             }
@@ -432,6 +443,11 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
 
     var fonts by mutableStateOf<List<FontItem>>(emptyList())
         private set
+
+    var pendingFontDeletionIds by mutableStateOf<Set<String>>(emptySet())
+        private set
+    val fontDeletionInProgress: Boolean get() = pendingFontDeletionIds.isNotEmpty()
+    private var fontIndexMutationGeneration = 0L
 
     var fontLoading by mutableStateOf(false)
         private set
@@ -553,6 +569,10 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun refreshFonts(force: Boolean = false) {
+        if (fontDeletionInProgress) {
+            if (force) pendingForceRefresh = true
+            return
+        }
         if (fontRequestJob?.isActive == true) {
             if (force) pendingForceRefresh = true
             return
@@ -644,6 +664,7 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
         showErrors: Boolean,
         knownFingerprint: FontFingerprint? = null,
     ) {
+        val mutationGeneration = fontIndexMutationGeneration
         val suffix = if (knownFingerprint != null || fonts.isNotEmpty()) " refresh" else ""
         val result = RootShell.exec(
             "sh ${RootShell.quote(bridge)} fonts$suffix",
@@ -664,6 +685,12 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
                 parseFonts(data.optJSONArray("fonts") ?: JSONArray()) to data.optString("current", fallbackCurrent)
             }
             val fingerprint = knownFingerprint ?: readFontFingerprint()
+            // A scan started before/during deletion must not resurrect its cards
+            // or overwrite the confirmed result. Queue one current scan instead.
+            if (mutationGeneration != fontIndexMutationGeneration || fontDeletionInProgress) {
+                pendingForceRefresh = true
+                return
+            }
             fonts = parsedFonts
             snapshot = snapshot.copy(activeFont = current, activeFontName = resolvedFontName(current))
             cachedFingerprint = fingerprint?.value.orEmpty()
@@ -957,7 +984,10 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
             .distinct()
         if (operationBusy || mixState.busy || selectedIds.isEmpty()) return
         operationBusy = true
-        operationMessage = "正在删除 ${selectedIds.size} 个字体 Family…"
+        fontIndexMutationGeneration++
+        pendingFontDeletionIds = selectedIds.toSet()
+        operationMessage = "正在后台删除 ${selectedIds.size} 个字体…"
+        updateFontTaskNotification("delete", "running", operationMessage)
         viewModelScope.launch {
             try {
                 val command = buildString {
@@ -970,22 +1000,46 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
                 )
                 if (result.code != 0) error(result.stderr.ifBlank { "字体删除失败" })
                 val root = firstJson(result.stdout)
+                val data = root.optJSONObject("data") ?: root
+                val deletedIds = data.optJSONArray("deletedIds")
+                // Error responses may still acknowledge a completed subset.
+                // Keep those removed and restore only unconfirmed families.
+                if (deletedIds != null) {
+                    val confirmed = (0 until deletedIds.length())
+                        .map { deletedIds.optString(it) }.filter { it in selectedIds }.toSet()
+                    fonts = fonts.filterNot { it.id in confirmed }
+                }
                 if (root.optString("status") != "ok") {
                     error(root.optString("message", "批量删除字体失败"))
                 }
-                val data = root.optJSONObject("data")
+                if (deletedIds != null && selectedIds.any { id -> fonts.any { it.id == id } }) {
+                    error("后台删除未全部完成，未删除的字体已恢复到列表")
+                }
                 fonts = fonts.filterNot { it.id in selectedIds }
                 cachedFingerprint = ""
                 normalizeMixSelections()
                 persistFontIndex()
-                operationMessage = data?.optString("message")?.takeIf { it.isNotBlank() }
-                    ?: "已删除 ${selectedIds.size} 个字体 Family"
-                refreshFonts(force = true)
+                operationMessage = data.optString("message").takeIf { it.isNotBlank() }
+                    ?: "已删除 ${selectedIds.size} 个字体"
+                updateFontTaskNotification("delete", "success", operationMessage, 100)
+            } catch (cancelled: CancellationException) {
+                operationMessage = "字体删除已取消，将重新核对字体库"
+                updateFontTaskNotification("delete", "cancelled", operationMessage)
+                throw cancelled
             } catch (error: Throwable) {
-                operationMessage = error.message ?: "字体删除失败"
-                refreshFonts(force = true)
+                operationMessage = "字体删除失败：${error.message ?: "请查看日志"}"
+                updateFontTaskNotification("delete", "failed", operationMessage)
+                normalizeMixSelections()
+                persistFontIndex()
             } finally {
+                fontIndexMutationGeneration++
+                cachedFingerprint = ""
+                pendingFontDeletionIds = emptySet()
                 operationBusy = false
+                if (currentCoroutineContext().isActive) {
+                    if (fontRequestJob?.isActive != true) pendingForceRefresh = false
+                    refreshFonts(force = true)
+                }
             }
         }
     }

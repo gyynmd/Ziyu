@@ -43,10 +43,15 @@ _fpc_rows="$_fpc_work/partitions"
 _fpc_xmls="$_fpc_work/xmls"
 _fpc_routes="$_fpc_work/routes"
 _fpc_entries="$_fpc_work/entries"
+_fpc_fontdirs="$_fpc_work/fontdirs"
+_fpc_etcdirs="$_fpc_work/etcdirs"
+_fpc_candidates="$_fpc_work/candidates"
 _fpc_report_tmp="$_fpc_work/report"
 : > "$_fpc_rows"; : > "$_fpc_xmls"; : > "$_fpc_routes"; : > "$_fpc_entries"
+: > "$_fpc_fontdirs"; : > "$_fpc_etcdirs"; : > "$_fpc_candidates"
 _fpc_cleanup() {
-    rm -f "$_fpc_rows" "$_fpc_xmls" "$_fpc_routes" "$_fpc_entries" "$_fpc_report_tmp" 2>/dev/null
+    rm -f "$_fpc_rows" "$_fpc_xmls" "$_fpc_routes" "$_fpc_entries" "$_fpc_report_tmp" \
+        "$_fpc_fontdirs" "$_fpc_etcdirs" "$_fpc_candidates" "$_fpc_report_tmp.kernel" 2>/dev/null
     rmdir "$_fpc_work" 2>/dev/null
 }
 trap '_fpc_cleanup' 0 HUP INT TERM
@@ -59,6 +64,30 @@ _fpc_device=$(getprop ro.product.device 2>/dev/null)
 _fpc_android=$(getprop ro.build.version.release 2>/dev/null)
 _fpc_sdk=$(getprop ro.build.version.sdk 2>/dev/null)
 _fpc_rom=$(getprop ro.build.display.id 2>/dev/null)
+_fpc_profile=generic
+# ROM identity takes precedence over hardware branding.
+if [ -n "$(getprop ro.build.version.oplusrom 2>/dev/null)$(getprop ro.build.version.opporom 2>/dev/null)" ]; then
+    _fpc_profile=coloros
+elif [ -n "$(getprop ro.vivo.os.name 2>/dev/null)$(getprop ro.vivo.os.version 2>/dev/null)$(getprop ro.vivo.rom.version 2>/dev/null)" ]; then
+    _fpc_profile=originos
+elif [ -n "$(getprop ro.mi.os.version.name 2>/dev/null)$(getprop ro.miui.ui.version.name 2>/dev/null)" ]; then
+    _fpc_profile=hyperos
+else
+    case "$(printf '%s %s' "$_fpc_brand" "$_fpc_manufacturer" | tr '[:upper:]' '[:lower:]')" in
+        *vivo*|*iqoo*) _fpc_profile=originos ;;
+        *oppo*|*oplus*|*oneplus*|*realme*) _fpc_profile=coloros ;;
+    esac
+fi
+_fpc_python="$_fpc_moddir/common/python/bin/luoshu-python"
+_fpc_pyroot="$_fpc_moddir/common/python"
+_fpc_parser="$_fpc_moddir/common/font_scan_profile.py"
+_fpc_python_xml() {
+    [ -x "$_fpc_python" ] && [ -f "$_fpc_parser" ] || return 127
+    PYTHONHOME="$_fpc_pyroot" \
+    PYTHONPATH="$_fpc_moddir/common:$_fpc_pyroot/lib/python3.14:$_fpc_pyroot/lib/python3.14/site-packages" \
+    LD_LIBRARY_PATH="$_fpc_pyroot/lib:$_fpc_pyroot/lib/python3.14/lib-dynload${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$_fpc_python" "$_fpc_parser" xml "$1" 2>/dev/null
+}
 _fpc_label="$_fpc_brand $_fpc_model"
 [ -n "$(printf '%s' "$_fpc_label" | tr -d ' ')" ] || _fpc_label=${_fpc_manufacturer:-未知设备}
 if [ "$_fpc_uid" = 0 ]; then
@@ -78,7 +107,7 @@ _fpc_add_partition() {
 }
 _fpc_xml_candidate() {
     [ -f "$1" ] || return 1
-    case "${1##*/}" in *font*.xml|*Font*.xml|*FONT*.xml) return 0 ;; esac
+    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in *font*.xml|*/fonts/*.xml) return 0 ;; esac
     return 1
 }
 _fpc_is_font() {
@@ -93,9 +122,8 @@ _fpc_state() {
 }
 _fpc_bytes() { [ -f "$1" ] && wc -c < "$1" 2>/dev/null | tr -d '[:space:]'; }
 _fpc_count_fonts() {
-    _n=0
-    for _f in "$1"/*; do [ -f "$_f" ] && _fpc_is_font "$_f" && _n=$((_n+1)); done
-    printf '%s' "$_n"
+    find "$1" -maxdepth 4 \( -type f -o -type l \) \
+        \( -iname '*.ttf' -o -iname '*.otf' -o -iname '*.ttc' -o -iname '*.otc' \) -print 2>/dev/null | wc -l | tr -d '[:space:]'
 }
 _fpc_mount_for() {
     awk -v target="$2" '
@@ -138,11 +166,41 @@ for _root in /*; do
     done
 done
 
+# Track directories separately from partitions; OEM roots are not /part/fonts.
+_fpc_add_dir() {
+    _ad_list=$1; _ad_part=$2; _ad_path=$3
+    grep -Fqx "$_ad_part|$_ad_path" "$_ad_list" 2>/dev/null || printf '%s|%s\n' "$_ad_part" "$_ad_path" >> "$_ad_list"
+}
+while IFS='|' read -r _part _origin; do
+    _fpc_add_dir "$_fpc_fontdirs" "$_part" "/$_part/fonts"
+    _fpc_add_dir "$_fpc_fontdirs" "$_part" "/$_part/etc/fonts"
+    _fpc_add_dir "$_fpc_etcdirs" "$_part" "/$_part/etc"
+    case "$_fpc_profile" in originos) _oems='vivo originos iqoo' ;;
+        coloros) _oems='oplus oppo coloros oneplus realme' ;; *) _oems='' ;; esac
+    for _oem in $_oems; do
+        _fpc_add_dir "$_fpc_fontdirs" "$_part" "/$_part/$_oem/fonts"
+        _fpc_add_dir "$_fpc_etcdirs" "$_part" "/$_part/$_oem/etc"
+    done
+done < "$_fpc_rows"
+# Canonical /system aliases are evidence too, independently in each namespace.
+for _part in system_ext product vendor my_product; do
+    _fpc_add_dir "$_fpc_fontdirs" "$_part" "/system/$_part/fonts"
+    _fpc_add_dir "$_fpc_etcdirs" "$_part" "/system/$_part/etc"
+done
+_fpc_add_dir "$_fpc_fontdirs" system /system/font
+
 # Parse <font weight="400" style="normal">name.ttf</font>, including multiline entries.
 _fpc_parse_xml() {
+    if [ -x "$_fpc_python" ] && [ -f "$_fpc_parser" ]; then
+        _fpc_python_xml "$1"
+        return $?
+    fi
+    # Standalone fallback tokenizes closing tags so a line can contain many fonts.
+    sed 's@</font>@</font>\
+@g' "$1" 2>/dev/null |
     awk '
       function trim(s){sub(/^[ \t]+/,"",s);sub(/[ \t]+$/,"",s);return s}
-      function attr(s,k,l,p,r){l=tolower(s);p=index(l,k "=\"");if(!p)return "";r=substr(s,p+length(k)+2);sub(/\".*/,"",r);return r}
+      function attr(s,k,l,r,q,e){l=tolower(s);if(!match(l,k "[ \t]*=[ \t]*[\042\047]"))return "";q=substr(s,RSTART+RLENGTH-1,1);r=substr(s,RSTART+RLENGTH);e=index(r,q);return e?substr(r,1,e-1):""}
       {
         l=tolower($0)
         if(pending==""){if(match(l,/<font([ \t>])/)){pending=$0;start=NR}}
@@ -152,30 +210,34 @@ _fpc_parse_xml() {
           if(op&&gt){rest=substr(l,op+gt);cl=index(rest,"</font")
             if(cl){
               tag=substr(pending,op,gt);ref=trim(substr(pending,op+gt,cl-1));sub(/[ \t].*/,"",ref)
-              if(ref~/\.(ttf|otf|ttc|otc)$/) print ref "|" attr(tag,"weight") "|" attr(tag,"style") "|" start
+              if(tolower(ref)~/\.(ttf|otf|ttc|otc)$/) print ref "|" attr(tag,"weight") "|" attr(tag,"style") "|" start
               pending=""
             }
           }
           if(length(pending)>4096)pending=""
         }
       }
-    ' "$1" 2>/dev/null
+    ' 2>/dev/null
 }
 
 printf '%s\n' '正在读取系统字体 XML...'
 _fpc_xml_limit=256
 _fpc_xml_total=0
-while IFS='|' read -r _part _origin; do
-    _etc="/$_part/etc"
-    [ -d "$_etc" ] || continue
-    for _xml in "$_etc"/*font*.xml "$_etc"/*Font*.xml "$_etc"/*FONT*.xml; do
+while IFS='|' read -r _part _etc; do
+    for _prefix in '' /proc/1/root; do
+    [ -d "$_prefix$_etc" ] || continue
+    find "$_prefix$_etc" -maxdepth 4 -type f -iname '*.xml' -print 2>/dev/null > "$_fpc_candidates"
+    while IFS= read -r _xml; do
         _fpc_xml_candidate "$_xml" || continue
         grep -Fqx "$_part|$_xml" "$_fpc_xmls" 2>/dev/null && continue
         _fpc_xml_total=$((_fpc_xml_total+1))
         [ "$_fpc_xml_total" -le "$_fpc_xml_limit" ] || break
         printf '%s|%s\n' "$_part" "$_xml" >> "$_fpc_xmls"
-        _fpc_parse_xml "$_xml" > "$_fpc_entries"
-        while IFS='|' read -r _ref _weight _style _line || [ -n "$_ref" ]; do
+        if ! _fpc_parse_xml "$_xml" > "$_fpc_entries"; then
+            printf '%s|parse-error|%s|||||unreadable|unreadable|未解析|未知|||\n' "$_part" "$_xml" >> "$_fpc_routes"
+            continue
+        fi
+        while IFS='|' read -r _ref _weight _style _line _index _axes _family || [ -n "$_ref" ]; do
             [ -n "$_ref" ] || continue
             _kind=relative; _resolved=
             case "$_ref" in
@@ -186,16 +248,16 @@ while IFS='|' read -r _part _origin; do
                 ;;
               *)
                 for _try in "/$_part/fonts/$_ref" "/$_part/etc/fonts/$_ref" "/$_part/$_ref"; do
-                    if [ -f "$_try" ]; then _resolved=$_try; break; fi
+                    if [ -f "$_prefix$_try" ]; then _resolved=$_try; break; fi
                 done
                 # OEM XML in system_ext/etc commonly references shared fonts.
                 # Match the inventory scanner's cross-partition candidate search
                 # instead of reporting every relative reference as missing.
                 if [ -z "$_resolved" ]; then
-                    for _font_part in system system_ext product vendor odm oem my_product my_engineering my_company my_preload my_region my_stock oplus_product oplus_engineering oplus_version oplus_region mi_ext cust hw_product; do
-                        _try="/$_font_part/fonts/$_ref"
-                        if [ -f "$_try" ]; then _resolved=$_try; break; fi
-                    done
+                    while IFS='|' read -r _font_part _font_dir; do
+                        _try="$_font_dir/$_ref"
+                        if [ -f "$_prefix$_try" ]; then _resolved=$_try; break; fi
+                    done < "$_fpc_fontdirs"
                 fi
                 ;;
             esac
@@ -205,13 +267,16 @@ while IFS='|' read -r _part _origin; do
                 _pid_state=$(_fpc_state "/proc/1/root$_resolved")
                 _size=$(_fpc_bytes "$_resolved")
             fi
-            printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+            printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
               "$_part" "$_kind" "$_ref" "${_weight:-未声明}" "${_style:-未声明}" \
-              "$_xml" "$_line" "$_self_state" "$_pid_state" "${_resolved:-未解析}" "${_size:-未知}" >> "$_fpc_routes"
+              "$_xml" "$_line" "$_self_state" "$_pid_state" "${_resolved:-未解析}" "${_size:-未知}" \
+              "${_index:-未知}" "${_axes:-无}" "${_family:-未声明}" >> "$_fpc_routes"
         done < "$_fpc_entries"
+    done < "$_fpc_candidates"
+    [ "$_fpc_xml_total" -le "$_fpc_xml_limit" ] || break
     done
     [ "$_fpc_xml_total" -le "$_fpc_xml_limit" ] || break
-done < "$_fpc_rows"
+done < "$_fpc_etcdirs"
 _fpc_xml_scanned=$((_fpc_xml_total < _fpc_xml_limit ? _fpc_xml_total : _fpc_xml_limit))
 _fpc_routes_count=$(wc -l < "$_fpc_routes" | tr -d '[:space:]')
 printf '扫描完成：字体 XML %s 个，提取具体字体路由 %s 条。正在导出日志...\n' "$_fpc_xml_scanned" "${_fpc_routes_count:-0}"
@@ -221,6 +286,8 @@ printf '扫描完成：字体 XML %s 个，提取具体字体路由 %s 条。正
     printf '生成时间：%s\n' "$(date '+%Y-%m-%d %H:%M:%S %z' 2>/dev/null || date 2>/dev/null || echo unknown)"
     printf '设备品牌：%s\n设备制造商：%s\n设备型号：%s\n产品代号：%s\n' "${_fpc_brand:-未读取到}" "${_fpc_manufacturer:-未读取到}" "${_fpc_model:-未读取到}" "${_fpc_device:-未读取到}"
     printf 'Android：%s / SDK %s\nROM：%s\n脚本 UID：%s\n' "${_fpc_android:-未读取到}" "${_fpc_sdk:-未读取到}" "${_fpc_rom:-未读取到}" "${_fpc_uid:-未知}"
+    printf '分类扫描：%s（OriginOS=vivo/iQOO；ColorOS=OPPO/一加/真我；保留通用分区扫描）\n' "$_fpc_profile"
+    printf '%s\n' '目录递归深度上限：4；分别读取脚本和 PID 1 的 XML/字体路径；不把可读字体视为原厂快照。'
     if [ -n "$_fpc_moddir" ]; then
         printf '模块目录：%s\n模块版本：%s (%s)\n' "$_fpc_moddir" "$(sed -n 's/^version=//p' "$_fpc_moddir/module.prop" 2>/dev/null | head -n1)" "$(sed -n 's/^versionCode=//p' "$_fpc_moddir/module.prop" 2>/dev/null | head -n1)"
     else
@@ -260,9 +327,10 @@ printf '扫描完成：字体 XML %s 个，提取具体字体路由 %s 条。正
     if [ ! -s "$_fpc_routes" ]; then
         printf '%s\n' '没有解析到 <font> 文件项；可能是 XML 格式特殊或不可读，请看后面的 XML 原文摘录。'
     else
-        while IFS='|' read -r _part _kind _ref _weight _style _xml _line _self _pid _resolved _size; do
+        while IFS='|' read -r _part _kind _ref _weight _style _xml _line _self _pid _resolved _size _index _axes _family; do
             printf '[%s] %s:%s  weight=%s style=%s\n' "$_kind" "$_xml" "$_line" "$_weight" "$_style"
             printf '  字体项=%s；解析路径=%s；执行进程=%s；PID1=%s；大小=%s 字节\n' "$_ref" "$_resolved" "$_self" "$_pid" "$_size"
+            printf '  family=%s；TTC index=%s；axes=%s（line=0 表示结构化 XML 解析）\n' "$_family" "$_index" "$_axes"
         done < "$_fpc_routes"
     fi
 
@@ -273,23 +341,40 @@ printf '扫描完成：字体 XML %s 个，提取具体字体路由 %s 条。正
     done < "$_fpc_xmls"
     [ -s "$_fpc_xmls" ] || printf '%s\n' '没有可读取字体 XML。'
 
-    printf '\n%s\n' '四、分区 fonts/ 直接字体文件清单（最多 800 项）' '------------------------------------------------------------------------'
+    printf '\n%s\n' '四、分类目录及子目录字体清单（两种视图，最多 1600 项）' '------------------------------------------------------------------------'
     _seen=0; _truncated=0
-    while IFS='|' read -r _part _origin; do
-        _dir="/$_part/fonts"; [ -d "$_dir" ] || continue
-        for _file in "$_dir"/*; do
+    while IFS='|' read -r _part _dir; do
+      for _prefix in '' /proc/1/root; do
+        [ -d "$_prefix$_dir" ] || continue
+        find "$_prefix$_dir" -maxdepth 4 \( -type f -o -type l \) \
+          \( -iname '*.ttf' -o -iname '*.otf' -o -iname '*.ttc' -o -iname '*.otc' \) -print 2>/dev/null > "$_fpc_candidates"
+        while IFS= read -r _file; do
             _fpc_is_font "$_file" || continue
             _seen=$((_seen+1))
-            if [ "$_seen" -gt 800 ]; then _truncated=1; break; fi
+            if [ "$_seen" -gt 1600 ]; then _truncated=1; break; fi
             _bytes=$(_fpc_bytes "$_file"); _mode=$(ls -ld "$_file" 2>/dev/null | awk '{print $1}'); _link=$(readlink "$_file" 2>/dev/null)
-            printf '%s | %s | %s bytes | mode=%s | %s' "$_file" "$(_fpc_state "$_file")" "${_bytes:-未知}" "${_mode:-未知}" "$_origin"
+            printf '%s | %s | %s bytes | mode=%s | profile=%s' "$_file" "$(_fpc_state "$_file")" "${_bytes:-未知}" "${_mode:-未知}" "$_fpc_profile"
             [ -n "$_link" ] && printf ' | symlink -> %s' "$_link"
             printf '\n'
-        done
+        done < "$_fpc_candidates"
         [ "$_truncated" = 1 ] && break
-    done < "$_fpc_rows"
+      done
+        [ "$_truncated" = 1 ] && break
+    done < "$_fpc_fontdirs"
     [ "$_seen" -gt 0 ] || printf '%s\n' '未枚举到字体文件。'
-    [ "$_truncated" = 0 ] || printf '%s\n' '达到 800 项上限，后续未列出。'
+    [ "$_truncated" = 0 ] || printf '%s\n' '达到 1600 项上限，后续未列出。'
+    printf '\n%s\n' '主题/动态字体路径（当前字体证据，不作为原厂编译来源）'
+    case "$_fpc_profile" in
+      originos) _themes='/data/bbkcore/theme /data/fonts/files /data/fonts/config/config.xml /data/system/theme/fonts' ;;
+      coloros) _themes='/data/oplus/uxres/theme /data/format_unclear/font /data/fonts/files /data/fonts/config/config.xml' ;;
+      *) _themes='/data/fonts/files /data/fonts/config/config.xml /data/system/theme/fonts' ;;
+    esac
+    for _theme in $_themes; do
+      for _prefix in '' /proc/1/root; do
+        _file="$_prefix$_theme"; [ -e "$_file" ] || [ -L "$_file" ] || continue
+        ls -ld "$_file" 2>&1
+      done
+    done
 
     printf '\n%s\n' '五、已安装模块的挂载和字体验证配置' '------------------------------------------------------------------------'
     if [ -z "$_fpc_moddir" ]; then
@@ -301,7 +386,8 @@ printf '扫描完成：字体 XML %s 个，提取具体字体路由 %s 条。正
           config/self-mount.conf config/active_font.conf config/device-font-engine.conf \
           config/font-payload-manifest.conf config/font-target-coverage.conf \
           config/universal-font-cutover.conf config/universal-font-runtime-verification.conf \
-          config/universal-font-rollback.conf; do
+          config/universal-font-rollback.conf config/mount-backend-verification.json \
+          config/stock-font-snapshot/manifest.json; do
             _file="$_fpc_moddir/$_name"; [ -s "$_file" ] || continue
             printf '\n[%s]\n' "$_name"
             case "$_name" in
@@ -314,7 +400,7 @@ printf '扫描完成：字体 XML %s 个，提取具体字体路由 %s 条。正
         printf '\n%s\n' '模块日志中的失败、blocked artifact、fallback、挂载和验证目标摘录（每份最多 120 行）'
         _logs=0
         for _name in logs/fontswitch.log logs/device-font-load-verify.log logs/mount-backend.log \
-          logs/font-route-verify.log logs/mount.log logs/self-mount.log logs/mount-diagnostics.log logs/soft-reboot.log logs/universal-runtime.log logs/service.log; do
+          logs/font-route-verify.log logs/mount.log logs/self-mount.log logs/mount-diagnostics.log logs/soft-reboot.log logs/universal-runtime.log logs/service.log logs/stock-font-snapshot.log; do
             _file="$_fpc_moddir/$_name"; [ -s "$_file" ] || continue
             printf '\n[%s]\n' "$_name"
             if [ "$_name" = logs/mount-diagnostics.log ]; then

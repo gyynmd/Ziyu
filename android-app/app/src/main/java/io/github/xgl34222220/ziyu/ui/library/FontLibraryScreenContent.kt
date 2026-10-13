@@ -10,7 +10,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,11 +23,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
@@ -37,25 +34,24 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FontDownload
-import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.Button
+import io.github.xgl34222220.ziyu.ui.design.ZiyuButton as Button
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuCard as Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import io.github.xgl34222220.ziyu.ui.design.ZiyuDropdownMenu as DropdownMenu
+import io.github.xgl34222220.ziyu.ui.design.ZiyuDropdownMenuItem as DropdownMenuItem
+import io.github.xgl34222220.ziyu.ui.design.ZiyuFilledTonalButton as FilledTonalButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIcon as Icon
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIconButton as IconButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuLinearProgressIndicator as LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuTextButton as TextButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuTextField as TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -63,12 +59,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,33 +72,41 @@ import io.github.xgl34222220.ziyu.NativeFontPreview
 import io.github.xgl34222220.ziyu.ui.font.fontCombinationSourceSummary
 import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
 import io.github.xgl34222220.ziyu.ui.theme.LocalDockContentPadding
-import io.github.xgl34222220.ziyu.ui.theme.ZiyuLayoutTokens
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuThemeTokens
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuHeaderAction
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuLoadingSkeleton
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuMotionTokens
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuSectionHeading
+import io.github.xgl34222220.ziyu.ui.theme.ZiyuSegmentedTabs
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuTopBar
 
+private val fontLibraryFilterLabels = FontLibraryFilter.entries.map { filter ->
+    when (filter) {
+        FontLibraryFilter.ALL -> "全部"
+        FontLibraryFilter.FAVORITE -> "收藏"
+        FontLibraryFilter.COMBINATION -> "组合"
+        FontLibraryFilter.VARIABLE -> "可变"
+        FontLibraryFilter.MULTI_WEIGHT -> "多字重"
+        FontLibraryFilter.CONFLICT -> "冲突"
+        FontLibraryFilter.INVALID -> "异常"
+    }
+}
+
 @Composable
-internal fun FontLibraryScreenCompact(
+internal fun FontLibraryPageContent(
     style: UiStyle,
     state: FontLibraryUiState,
     actions: FontLibraryActions,
     tools: @Composable () -> Unit,
 ) {
-    val miuix = style == UiStyle.MIUIX
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
+    val layout = LocalZiyuThemeTokens.current.layout
     val scheme = MaterialTheme.colorScheme
-    val cardColor = if (miuix) tokens.cardBackground else scheme.surfaceContainerLow
-    val elevatedColor = if (miuix) tokens.elevatedCardBackground else scheme.surfaceContainerHigh
-    val textPrimary = if (miuix) tokens.textPrimary else scheme.onSurface
-    val dark = scheme.background.luminance() < .5f
-    val textSecondary = if (dark) {
-        if (miuix) tokens.textSecondary else scheme.onSurfaceVariant
-    } else {
-        ZiyuLayoutTokens.NeutralSecondaryText
-    }
+    val cardColor = tokens.cardBackground
+    val elevatedColor = tokens.elevatedCardBackground
+    val textPrimary = tokens.textPrimary
+    val textSecondary = tokens.textSecondary
     var showTools by rememberSaveable { mutableStateOf(false) }
     var showSort by remember { mutableStateOf(false) }
     val filtered = state.query.isNotBlank() || state.filter != FontLibraryFilter.ALL
@@ -113,11 +114,11 @@ internal fun FontLibraryScreenCompact(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            start = ZiyuLayoutTokens.PageHorizontal,
-            end = ZiyuLayoutTokens.PageHorizontal,
-            bottom = maxOf(LocalDockContentPadding.current, ZiyuLayoutTokens.FloatingDockSafeBottom),
+            start = layout.pageHorizontal,
+            end = layout.pageHorizontal,
+            bottom = maxOf(LocalDockContentPadding.current, layout.dockSafeBottom),
         ),
-        verticalArrangement = Arrangement.spacedBy(ZiyuLayoutTokens.ItemGap),
+        verticalArrangement = Arrangement.spacedBy(layout.itemGap),
     ) {
         item(key = "header") {
             ZiyuTopBar(title = "字体库") {
@@ -158,14 +159,11 @@ internal fun FontLibraryScreenCompact(
             )
         }
         item(key = "filters") {
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FontLibraryFilter.entries.forEach { option ->
-                    ChoicePill(option.label, state.filter == option) { actions.setFilter(option) }
-                }
-            }
+            ZiyuSegmentedTabs(
+                labels = fontLibraryFilterLabels,
+                selectedIndex = FontLibraryFilter.entries.indexOf(state.filter),
+                onSelected = { FontLibraryFilter.entries.getOrNull(it)?.let(actions.setFilter) },
+            )
         }
         item(key = "collection_heading") {
             Column {
@@ -230,7 +228,7 @@ internal fun FontLibraryScreenCompact(
                     )
                 }
             }
-        } else if (state.operationBusy) {
+        } else if (state.operationBusy && !state.deletionInProgress) {
             item(key = "loading") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("正在处理字体，请稍候…", color = textSecondary, fontSize = 13.sp)
@@ -287,11 +285,11 @@ internal fun FontLibraryScreenCompact(
             }
         }
         items(state.fonts, key = { "font:${it.id}" }, contentType = { "font" }) { font ->
-            CompactFontRow(
+            LibraryFontCard(
                 font = font, active = state.activeFontId == font.id, busy = state.operationBusy,
                 cardColor = cardColor, textPrimary = textPrimary, textSecondary = textSecondary,
                 onDetails = { actions.details(font) }, onApply = { actions.apply(font) },
-                onDelete = { actions.delete(font) },
+                onDelete = { actions.delete(font) }, style = style,
             )
         }
     }
@@ -302,16 +300,12 @@ private fun CompactSystemFontRow(
     active: Boolean, busy: Boolean, cardColor: Color,
     textPrimary: Color, textSecondary: Color, onRestore: () -> Unit, onImport: () -> Unit,
 ) {
-    val dark = MaterialTheme.colorScheme.background.luminance() < .5f
+    val layout = LocalZiyuThemeTokens.current.layout
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = cardColor),
-        border = BorderStroke(
-            0.5.dp,
-            if (dark) Color.Transparent else ZiyuLayoutTokens.LightCardOutline,
-        ),
     ) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(layout.compactPadding), verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .08f)) {
                 Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                     Text("Aa", color = MaterialTheme.colorScheme.primary, fontSize = 21.sp, fontWeight = FontWeight.Medium)
@@ -330,7 +324,7 @@ private fun CompactSystemFontRow(
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
             ) { Text("恢复", fontSize = 13.sp) }
         }
-        androidx.compose.material3.TextButton(
+        TextButton(
             onClick = onImport,
             enabled = !busy,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -340,35 +334,27 @@ private fun CompactSystemFontRow(
 }
 
 @Composable
-private fun CompactFontRow(
+private fun LibraryFontCard(
     font: FontItem, active: Boolean, busy: Boolean, cardColor: Color,
     textPrimary: Color, textSecondary: Color,
     onDetails: () -> Unit, onApply: () -> Unit, onDelete: () -> Unit,
+    style: UiStyle,
 ) {
-    var menuExpanded by remember(font.id) { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
-    val dark = scheme.background.luminance() < .5f
+    val layout = LocalZiyuThemeTokens.current.layout
     Card(
         onClick = onDetails,
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
             containerColor = if (font.valid) cardColor else scheme.errorContainer.copy(alpha = .34f),
         ),
-        border = BorderStroke(
-            0.5.dp,
-            when {
-                !font.valid -> scheme.error.copy(alpha = .16f)
-                dark -> Color.Transparent
-                else -> ZiyuLayoutTokens.LightCardOutline
-            },
-        ),
+        border = if (font.valid) null else BorderStroke(.75.dp, scheme.error.copy(alpha = .40f)),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(layout.compactPadding), verticalArrangement = Arrangement.spacedBy(layout.itemGap)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        font.name, color = textPrimary, fontSize = 16.sp, lineHeight = 22.sp,
+                        font.name, color = textPrimary, style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.height(3.dp))
@@ -381,20 +367,6 @@ private fun CompactFontRow(
                     )
                 }
                 if (active) StatusPill("使用中")
-                Box {
-                    IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Rounded.MoreVert, contentDescription = "${font.name}的更多操作", tint = textSecondary)
-                    }
-                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                        DropdownMenuItem(text = { Text("字体详情") }, onClick = { menuExpanded = false; onDetails() })
-                        DropdownMenuItem(
-                            text = { Text("删除字体") },
-                            leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) },
-                            enabled = !busy && !active,
-                            onClick = { menuExpanded = false; onDelete() },
-                        )
-                    }
-                }
             }
             if (font.combination) {
                 Text(
@@ -408,15 +380,17 @@ private fun CompactFontRow(
             }
             if (font.valid) {
                 Surface(
+                    modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
-                    color = if (active) scheme.primary.copy(alpha = .07f) else textPrimary.copy(alpha = .035f),
+                    color = scheme.primary.copy(alpha = if (active) .12f else .08f),
+                    border = BorderStroke(1.dp, scheme.primary.copy(alpha = .40f)),
                 ) {
                     NativeFontPreview(
                         font = font,
                         text = if (font.supportsCjk) "山海有相逢 Aa 0123" else "Hello, Ziyu 0123",
                         axes = if (font.variable) mapOf("wght" to 400f) else emptyMap(),
-                        modifier = Modifier.fillMaxWidth().height(70.dp).padding(horizontal = 14.dp),
-                        textSizeSp = 22f, gravity = Gravity.CENTER_VERTICAL, maxLines = 1,
+                        modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 14.dp),
+                        textSizeSp = 23f, gravity = Gravity.CENTER_VERTICAL, maxLines = 1,
                     )
                 }
             } else if (font.error.isNotBlank()) {
@@ -426,24 +400,42 @@ private fun CompactFontRow(
                     Text(font.error, color = scheme.error, fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 }
             }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "轻触卡片查看详情",
-                    modifier = Modifier.weight(1f),
-                    color = textSecondary,
-                    fontSize = 11.sp,
-                )
-                Spacer(Modifier.width(12.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+            ) {
+                val deleteEnabled = !busy && !active
+                TextButton(
+                    onClick = onDelete,
+                    enabled = deleteEnabled,
+                    modifier = Modifier.widthIn(min = 88.dp).heightIn(min = 40.dp),
+                ) {
+                    Text("删除", fontSize = 13.sp, color = scheme.error.copy(alpha = if (deleteEnabled) 1f else .38f))
+                }
+                Spacer(Modifier.width(8.dp))
                 if (active) {
-                    FilledTonalButton(onClick = onDetails, modifier = Modifier.heightIn(min = 44.dp), shape = RoundedCornerShape(16.dp)) {
+                    TextButton(onClick = onDetails, modifier = Modifier.widthIn(min = 104.dp).heightIn(min = 40.dp)) {
                         Text("查看详情", fontSize = 13.sp)
                     }
                 } else {
-                    Button(
-                        onClick = onApply, enabled = font.valid && !busy,
-                        modifier = Modifier.heightIn(min = 44.dp), shape = RoundedCornerShape(16.dp),
-                        contentPadding = PaddingValues(horizontal = 22.dp, vertical = 8.dp),
-                    ) { Text("应用字体", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+                    when (style) {
+                        UiStyle.MATERIAL -> Button(
+                            onClick = onApply,
+                            enabled = font.valid && !busy,
+                            modifier = Modifier.widthIn(min = 104.dp).heightIn(min = 40.dp),
+                        ) { Text("应用字体") }
+                        UiStyle.MIUIX -> FilledTonalButton(
+                            onClick = onApply,
+                            enabled = font.valid && !busy,
+                            modifier = Modifier.widthIn(min = 104.dp).heightIn(min = 40.dp),
+                        ) { Text("应用") }
+                        UiStyle.COUI -> TextButton(
+                            onClick = onApply,
+                            enabled = font.valid && !busy,
+                            modifier = Modifier.widthIn(min = 104.dp).heightIn(min = 40.dp),
+                        ) { Text("应用字体") }
+                    }
                 }
             }
         }
@@ -462,20 +454,6 @@ private fun fontMetadataSummary(font: FontItem): String {
         weight,
         if (font.supportsCjk) "中文 / 拉丁" else "拉丁",
     ).filter { it.isNotBlank() }.joinToString(" · ")
-}
-
-@Composable
-private fun ChoicePill(label: String, active: Boolean, onClick: () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    Surface(
-        modifier = Modifier.clip(RoundedCornerShape(16.dp)).selectable(selected = active, role = Role.Tab, onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        color = if (active) scheme.primary else scheme.surfaceContainerHigh,
-    ) {
-        Box(Modifier.heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-            Text(label, color = if (active) scheme.onPrimary else scheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-        }
-    }
 }
 
 @Composable

@@ -28,6 +28,10 @@ import shutil
 import tempfile
 import time
 import unicodedata
+import sys
+from contextlib import contextmanager
+from collections import Counter
+from functools import lru_cache
 from pathlib import Path
 from font_live_payload import work_root as live_work_root
 from typing import Any, Iterable
@@ -51,6 +55,8 @@ import font_inventory
 import font_web_convert
 import minimal_xml_router
 import universal_font_plan
+import fontTools
+from font_digest_cache import FontDigestCache, file_identity
 from font_space_compat import ensure_space_glyphs
 from legacy_v14_4.composite_layout import (
     clear_imported_metric_variations,
@@ -58,7 +64,7 @@ from legacy_v14_4.composite_layout import (
 )
 
 SCHEMA = "universal-font-artifacts-v1"
-COMPILER_REVISION = 2
+COMPILER_REVISION = 3
 FONT_PLAN_SCHEMA = "universal-font-plan-v1"
 ROUTE_SCHEMA = "minimal-xml-route-plan-v1"
 ROUTABLE_ACTIONS = {"replace", "compile", "compile-specialized"}
@@ -83,6 +89,33 @@ MAX_POST_ALIGNMENT_EM = 0.05
 MAX_POST_HEIGHT_DELTA = 0.14
 MAX_VARIABLE_NATURAL_ALIGNMENT_EM = 0.055
 MAX_VARIABLE_HEIGHT_DELTA = 0.12
+_SESSION = None
+
+
+@contextmanager
+def _compile_session(output_dir: Path | None = None):
+    """Own caches for one operation; prepared font objects are never shared."""
+    global _SESSION
+    if _SESSION is not None:
+        yield _SESSION
+        return
+    temporary = None
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        temporary = Path(tempfile.mkdtemp(prefix='.prepared-', dir=output_dir))
+    session = {'digests': FontDigestCache(), 'inputs': {}, 'prepared': {},
+               'materialized': {}, 'unitMaterialized': {}, 'root': temporary,
+               'bytes': 0, 'hits': 0, 'reuseCounts': Counter()}
+    _SESSION = session
+    try:
+        yield session
+        for path, expected in session['inputs'].items():
+            if file_identity(path.stat()) != expected:
+                raise CompilerError(f'编译期间输入文件发生变化：{path.name}')
+    finally:
+        _SESSION = None
+        if temporary is not None:
+            shutil.rmtree(temporary, ignore_errors=True)
 
 
 class CompilerError(RuntimeError):
@@ -125,14 +158,27 @@ def _canonical_hash(value: Any) -> str:
 
 
 def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
     try:
-        with path.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                digest.update(chunk)
+        before = file_identity(path.stat())
+        cache = _SESSION['digests'] if _SESSION is not None else FontDigestCache()
+        digest = cache.sha256(path)
+        if file_identity(path.stat()) != before:
+            raise CompilerError(f'读取期间文件发生变化：{path.name}')
     except OSError as error:
         raise CompilerError(f"无法读取文件：{path}") from error
-    return digest.hexdigest()
+    return digest
+
+
+def _watch_input(path: Path) -> str:
+    before = file_identity(path.stat())
+    digest = _sha256(path)
+    if file_identity(path.stat()) != before:
+        raise CompilerError(f'输入文件发生变化：{path.name}')
+    if _SESSION is not None:
+        previous = _SESSION['inputs'].setdefault(path, before)
+        if previous != before:
+            raise CompilerError(f'编译期间输入文件发生变化：{path.name}')
+    return digest
 
 
 def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
@@ -188,7 +234,7 @@ def _file_uid_matches(source: dict[str, Any], path: Path) -> None:
     expected = str(source.get("fileUid") or "")
     if not expected.startswith("sha256:"):
         raise CompilerError("FontPlan source 缺少 fileUid")
-    actual = "sha256:" + _sha256(path)
+    actual = "sha256:" + _watch_input(path)
     if actual != expected:
         raise CompilerError(f"源字体内容已变化：{path.name}")
 
@@ -324,32 +370,90 @@ def _source_instance(
     if not raw.is_file():
         raise CompilerError(f"源字体不存在：{raw}")
     _file_uid_matches(source, raw)
-    converted: dict[str, Any] | None = None
-    source_path = raw
-    container = _font_container(raw)
-    if container in {"WOFF", "WOFF2"}:
-        converted = font_web_convert.convert(raw, temp_root / "web")
-        source_path = Path(str(converted["outputPath"]))
+    source_path, container, converted = _materialize_source(source, temp_root)
 
     face_index = max(0, _int(source.get("faceIndex"), 0))
+    key = (file_identity(raw.stat()), container, face_index, weight, tuple(sorted(axes.items())))
+    if _SESSION is not None and key in _SESSION['prepared']:
+        prepared, prepared_face, report = _SESSION['prepared'][key]
+        _SESSION['hits'] += 1
+        report = copy.deepcopy(report)
+        report['inputPath'] = str(raw)
+        return _open_face(prepared, prepared_face), report
     original = _open_face(source_path, face_index)
+    instance = None
     try:
         instance, location = _instantiate(original, weight, axes)
-        if instance is original:
-            # Caller owns the returned font; do not close it here.
-            original = None
-        return instance, {
-            "inputPath": str(raw),
-            "materializedPath": str(source_path),
-            "inputContainer": container,
-            "faceIndex": face_index,
-            "variable": bool(location),
-            "location": location,
-            "conversion": converted,
+        report = {
+            "inputPath": str(raw), "materializedPath": str(source_path),
+            "inputContainer": container, "faceIndex": face_index,
+            "variable": bool(location), "location": location, "conversion": converted,
         }
+        if instance is original:
+            if (_SESSION is not None and
+                    (source_path == raw or (_SESSION['root'] is not None
+                                            and source_path.is_relative_to(_SESSION['root'])))):
+                _SESSION['prepared'][key] = (source_path, face_index, report)
+            original = None
+            return instance, report
+        if _SESSION is not None and _SESSION['root'] is not None:
+            # Bound private disk use. A miss still uses the ordinary compiler.
+            estimate = raw.stat().st_size
+            reuse_key = (str(source.get('fileUid') or ''), face_index, weight, tuple(sorted(axes.items())))
+            if (_SESSION['reuseCounts'][reuse_key] > 1 and len(_SESSION['prepared']) < 32
+                    and _SESSION['bytes'] + estimate <= 192 * 1024 * 1024):
+                prepared = _SESSION['root'] / f"{len(_SESSION['prepared'])}.font"
+                instance.save(prepared, reorderTables=False)
+                size = prepared.stat().st_size
+                if _SESSION['bytes'] + size <= 192 * 1024 * 1024:
+                    prepared.chmod(0o444)
+                    _SESSION['prepared'][key] = (prepared, 0, report)
+                    _SESSION['bytes'] += size
+                else:
+                    prepared.unlink()
+        return instance, report
+    except BaseException:
+        if instance is not None and instance is not original:
+            instance.close()
+        raise
     finally:
         if original is not None:
             original.close()
+
+
+def _materialize_source(source: dict[str, Any], temp_root: Path):
+    raw = Path(str(source.get('sourcePath') or ''))
+    _file_uid_matches(source, raw)
+    key = (file_identity(raw.stat()), raw.suffix.lower())
+    unit_key = (key, str(temp_root))
+    if _SESSION is not None and unit_key in _SESSION['unitMaterialized']:
+        return _SESSION['unitMaterialized'][unit_key]
+    if _SESSION is not None and key in _SESSION['materialized']:
+        return _SESSION['materialized'][key]
+    container = _font_container(raw)
+    converted = None
+    materialized = raw
+    if container in {'WOFF', 'WOFF2'}:
+        folder = (_SESSION['root'] / f"web-{len(_SESSION['materialized'])}"
+                  if _SESSION is not None and _SESSION['root'] is not None else temp_root / 'web')
+        converted = font_web_convert.convert(raw, folder)
+        materialized = Path(str(converted['outputPath']))
+        size = materialized.stat().st_size
+        if _SESSION is not None and _SESSION['bytes'] + size > 192 * 1024 * 1024:
+            # Oversized conversions remain local to this unit and are reclaimed
+            # with its ordinary temporary tree; never cache a soon-deleted path.
+            local = temp_root / 'web-local' / materialized.name
+            local.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(materialized), str(local))
+            converted = {**converted, 'outputPath': str(local)}
+            _SESSION['unitMaterialized'][unit_key] = (local, container, converted)
+            return local, container, converted
+        if _SESSION is not None:
+            _SESSION['bytes'] += size
+    result = (materialized, container, converted)
+    if _SESSION is not None:
+        _SESSION['materialized'][key] = result
+    return result
 
 
 def _stock_map(path: Path | None) -> dict[str, Path]:
@@ -413,6 +517,19 @@ def _verified_lower_roots(projection: Path | None = None) -> list[font_inventory
 
 
 def _stock_views() -> list[list[font_inventory.FontRoot]]:
+    state_root = live_work_root()
+    state = tuple(_read_text(path) for path in (
+        Path('/proc/self/mountinfo'), Path('/proc/1/mountinfo'),
+        Path('/proc/sys/kernel/random/boot_id'), state_root / 'boot-id',
+        state_root / 'mounts.list', Path('/proc/1/root') / state_root.relative_to('/') / 'mounts.list',
+    )) if state_root.is_absolute() else ()
+    return _stock_views_for_state(state)
+
+
+@lru_cache(maxsize=1)
+def _stock_views_for_state(_state: tuple[str, ...]) -> list[list[font_inventory.FontRoot]]:
+    # Reuse directory probes only while the boot, namespaces and mount ledger
+    # remain unchanged. Font content is still validated by the compiler.
     views = []
     rom_roots = _verified_rom_roots()
     for projection in (None, Path("/proc/1/root")):
@@ -495,6 +612,10 @@ def _resolve_stock(
     logical = Path(logical_value)
     candidate = explicit.get(logical_value)
     if candidate is not None and candidate.is_file():
+        return candidate
+    from stock_font_snapshot import resolve as resolve_snapshot
+    candidate = resolve_snapshot(logical_value, digest_cache=(_SESSION['digests'] if _SESSION else None))
+    if candidate is not None:
         return candidate
     failures: list[str] = []
     for roots in _stock_views():
@@ -1397,20 +1518,14 @@ def _compile_source_as_base(
         raise CompilerError(f"源字体不存在：{probe_source_raw}")
     _file_uid_matches(source_info, probe_source_raw)
     source_container = _font_container(probe_source_raw)
-    materialized = probe_source_raw
-    conversion = None
-    if source_container in {"WOFF", "WOFF2"}:
-        conversion = font_web_convert.convert(probe_source_raw, temp_root / "web")
-        materialized = Path(str(conversion["outputPath"]))
-
-    source_original = _open_face(materialized, max(0, _int(source_info.get("faceIndex"), 0)))
+    materialized, source_container, conversion = _materialize_source(source_info, temp_root)
+    source_original = _open_face(materialized, max(0, _int(source_info.get("faceIndex"), 0)), lazy=True)
     compiled: TTFont | None = None
     stock_geometry: TTFont | None = None
     try:
         source_axes = _source_axis_spec_for_route(source_original, artifact, weight)
-        compiled, source_location = _instantiate(source_original, weight, source_axes)
-        if compiled is source_original:
-            source_original = None
+        compiled, prepared_report = _source_instance(source_info, weight, source_axes, temp_root)
+        source_location = prepared_report['location']
 
         stock_geometry, stock_location = _stock_geometry_font(
             stock,
@@ -1488,22 +1603,16 @@ def _compile_stock_shell(
         raise CompilerError(f"源字体不存在：{source_path}")
     _file_uid_matches(source_info, source_path)
     source_container = _font_container(source_path)
-    materialized = source_path
-    conversion = None
-    if source_container in {"WOFF", "WOFF2"}:
-        conversion = font_web_convert.convert(source_path, temp_root / "web")
-        materialized = Path(str(conversion["outputPath"]))
-
-    source_original = _open_face(materialized, max(0, _int(source_info.get("faceIndex"), 0)))
+    materialized, source_container, conversion = _materialize_source(source_info, temp_root)
+    source_original = _open_face(materialized, max(0, _int(source_info.get("faceIndex"), 0)), lazy=True)
     source_instance: TTFont | None = None
     stock_geometry: TTFont | None = None
     base: TTFont | None = None
     collection: TTCollection | None = None
     try:
         source_axes = _source_axis_spec_for_route(source_original, artifact, weight)
-        source_instance, source_location = _instantiate(source_original, weight, source_axes)
-        if source_instance is source_original:
-            source_original = None
+        source_instance, prepared_report = _source_instance(source_info, weight, source_axes, temp_root)
+        source_location = prepared_report['location']
 
         stock_geometry, stock_location = _stock_geometry_font(
             stock,
@@ -1586,13 +1695,7 @@ def _compile_source_variable_preserve(
     if not source_path.is_file():
         raise CompilerError(f"源字体不存在：{source_path}")
     _file_uid_matches(source_info, source_path)
-    source_container = _font_container(source_path)
-    if source_container in {"WOFF", "WOFF2"}:
-        conversion = font_web_convert.convert(source_path, temp_root / "web")
-        materialized = Path(str(conversion["outputPath"]))
-    else:
-        conversion = None
-        materialized = source_path
+    materialized, source_container, conversion = _materialize_source(source_info, temp_root)
 
     source = _open_face(materialized, max(0, _int(source_info.get("faceIndex"), 0)))
     stock_geometry: TTFont | None = None
@@ -1741,6 +1844,7 @@ def _compile_unit(
                 raise CompilerError(f"FontPlan 风险不能由编译器安全消除：{risk}")
 
         stock = _resolve_stock(target_path, stock_paths, allow_live_stock)
+        _watch_input(stock)
         stock_face = max(0, _int(artifact.get("requiredFaceIndex"), 0))
         _validate_stock_contract(target, stock, stock_face)
         mode = _choose_mode(
@@ -1818,6 +1922,11 @@ def compile_all(
     output_dir: Path,
     allow_live_stock: bool,
 ) -> dict[str, Any]:
+    with _compile_session(output_dir):
+        return _compile_all(font_plan, route_plan, stock_paths, output_dir, allow_live_stock)
+
+
+def _compile_all(font_plan, route_plan, stock_paths, output_dir, allow_live_stock):
     if font_plan.get("schema") != FONT_PLAN_SCHEMA:
         raise CompilerError("不支持的 FontPlan")
     universal_font_plan.validate_plan(font_plan)
@@ -1827,6 +1936,24 @@ def compile_all(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     units = _collect_units(font_plan, route_plan)
+    for unit in units:
+        target, artifact = unit['target'], unit['artifact']
+        contract = target.get('targetContract', {})
+        if (contract.get('variable') is True and unit.get('deploymentKinds') == ['physical-slot']
+                and target.get('role') not in SPECIALIZED_ROLES
+                and contract.get('format') not in {'TTC', 'OTC'}):
+            continue  # Whole-variable preservation does not consume a prepared instance.
+        source = target.get('source')
+        if not isinstance(source, dict):
+            continue
+        known = {str(a.get('tag') or '') for a in (source.get('axes') or []) if isinstance(a, dict)}
+        weight = _artifact_weight(artifact, target)
+        axes = {tag: value for tag, value in _axis_values(artifact.get('requiredAxes')).items() if tag in known}
+        if 'wght' in known and 'wght' not in axes:
+            axes['wght'] = float(weight)
+        _SESSION['reuseCounts'][(str(source.get('fileUid') or ''),
+                                 max(0, _int(source.get('faceIndex'), 0)), weight,
+                                 tuple(sorted(axes.items())))] += 1
     # Production cutover requires every unit. Do not spend minutes compiling
     # expensive VF shells when a known blocked unit already makes deployment
     # impossible. Standalone diagnostic compilation keeps its detailed manifest.
@@ -1891,6 +2018,9 @@ def compile_all(
     return {
         "schema": SCHEMA,
         "compilerRevision": COMPILER_REVISION,
+        "reuseContext": _reuse_context(allow_live_stock),
+        "batchCache": {"preparedEntries": len(_SESSION['prepared']),
+                       "preparedHits": _SESSION['hits'], "temporaryBytes": _SESSION['bytes']},
         "state": "compiled" if blocked == 0 else "partial",
         "mutatesSystem": False,
         "generatedAt": int(time.time()),
@@ -1914,6 +2044,42 @@ def compile_all(
     }
 
 
+def _reuse_context(allow_live_stock: bool) -> str:
+    common = Path(__file__).parent
+    paths = sorted([*common.glob('*.py'), *(common / 'legacy_v14_4').glob('*.py')])
+    return _canonical_hash({
+        'compilerRevision': COMPILER_REVISION, 'allowLiveStock': allow_live_stock,
+        'fontToolsVersion': fontTools.__version__, 'pythonVersion': list(sys.version_info[:3]),
+        'code': {str(path.relative_to(common)): _watch_input(path) for path in paths},
+    })
+
+
+def _reuse_manifest(manifest, font_plan, route_plan, stock_paths, output_dir, allow_live_stock):
+    if manifest.get('reuseContext') != _reuse_context(allow_live_stock):
+        raise CompilerError('编译代码或运行环境已变化，需要重新生成')
+    if not manifest.get('summary', {}).get('deploymentReady'):
+        raise CompilerError('不复用未完整生成的缓存')
+    units = _collect_units(font_plan, route_plan)
+    by_id = {str(u['artifact']['artifactId']): u for u in units}
+    artifacts = manifest.get('artifacts', [])
+    if len(artifacts) != len(by_id) or {a.get('artifactId') for a in artifacts} != set(by_id):
+        raise CompilerError('缓存产物与当前字体目标不一致')
+    for artifact in artifacts:
+        unit = by_id[artifact['artifactId']]
+        target = unit['target']
+        source = target.get('source')
+        if isinstance(source, dict):
+            _file_uid_matches(source, Path(str(source.get('sourcePath') or '')))
+        logical = str(target.get('path') or '')
+        stock = _resolve_stock(logical, stock_paths, allow_live_stock)
+        if _watch_input(stock) != artifact.get('stock', {}).get('sha256'):
+            raise CompilerError('原厂字体内容已变化，需要重新生成')
+        output = Path(str(artifact.get('output') or ''))
+        if output.is_symlink() or output_dir.is_symlink() or output.parent.resolve() != output_dir.resolve():
+            raise CompilerError('缓存产物路径超出本次输出目录')
+    validate_manifest(manifest, font_plan, route_plan)
+
+
 def validate_manifest(
     manifest: dict[str, Any],
     font_plan: dict[str, Any],
@@ -1921,7 +2087,9 @@ def validate_manifest(
 ) -> None:
     if manifest.get("schema") != SCHEMA:
         raise CompilerError("Universal Font Artifacts manifest 格式无效")
-    if _int(manifest.get("compilerRevision"), 0) != COMPILER_REVISION:
+    # Revision 2 active payloads remain verifiable during an update. Only a
+    # current reuseContext may authorize cached compilation, never this allowance.
+    if _int(manifest.get("compilerRevision"), 0) not in {2, COMPILER_REVISION}:
         raise CompilerError("Universal Font Artifacts compilerRevision 无效")
     if manifest.get("mutatesSystem") is not False:
         raise CompilerError("Phase 6 不得修改系统")
@@ -2010,6 +2178,7 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--validate", type=Path)
     parser.add_argument("--allow-live-stock", action="store_true")
+    parser.add_argument("--reuse-only", action="store_true")
     args = parser.parse_args()
 
     try:
@@ -2018,9 +2187,17 @@ def main() -> int:
         universal_font_plan.validate_plan(font_plan)
         minimal_xml_router.validate_route_plan(route_plan, font_plan=font_plan)
 
-        if args.validate is not None:
+        if args.reuse_only:
+            if args.manifest is None or args.output_dir is None:
+                raise CompilerError('复用检查缺少缓存目录/清单')
+            with _compile_session():
+                manifest = _load(args.manifest)
+                _reuse_manifest(manifest, font_plan, route_plan, _stock_map(args.stock_map),
+                                args.output_dir, args.allow_live_stock)
+        elif args.validate is not None:
             manifest = _load(args.validate)
-            validate_manifest(manifest, font_plan, route_plan)
+            with _compile_session():
+                validate_manifest(manifest, font_plan, route_plan)
         else:
             if args.output_dir is None or args.manifest is None:
                 raise CompilerError("编译需要 --output-dir 与 --manifest")
@@ -2037,6 +2214,8 @@ def main() -> int:
             "status": "ok",
             "schema": manifest["schema"],
             "manifestId": manifest["manifestId"],
+            "cacheReused": args.reuse_only,
+            "batchCache": manifest.get('batchCache', {}),
             **manifest["summary"],
         }, ensure_ascii=False, separators=(",", ":")))
         return 0
@@ -2045,7 +2224,7 @@ def main() -> int:
             "status": "error",
             "message": str(error) or error.__class__.__name__,
         }, ensure_ascii=False, separators=(",", ":")))
-        return 1
+        return 3 if args.reuse_only else 1
 
 
 if __name__ == "__main__":

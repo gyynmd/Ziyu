@@ -20,15 +20,15 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
+import io.github.xgl34222220.ziyu.ui.design.ZiyuAlertDialog as AlertDialog
+import io.github.xgl34222220.ziyu.ui.design.ZiyuButton as Button
+import io.github.xgl34222220.ziyu.ui.design.ZiyuCircularProgressIndicator as CircularProgressIndicator
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIcon as Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuOutlinedTextField as OutlinedTextField
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,7 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuGlyph
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuIconTokens
 import kotlinx.coroutines.Dispatchers
@@ -67,7 +67,7 @@ internal fun FontMetadataInspector(
     var showPicker by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var details by remember { mutableStateOf<DetailedFontMetadata?>(null) }
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
 
     Surface(
         onClick = { showPicker = true },
@@ -151,7 +151,7 @@ private fun MetadataPickerDialog(
                 font.weightLabel.contains(needle, ignoreCase = true)
         }
     }
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -219,7 +219,7 @@ private fun MetadataResultDialog(
     result: DetailedFontMetadata,
     onDismiss: () -> Unit,
 ) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(result.title, fontWeight = FontWeight.Black, maxLines = 2) },

@@ -27,18 +27,19 @@ import androidx.compose.material.icons.rounded.FontDownload
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.Button
+import io.github.xgl34222220.ziyu.ui.design.ZiyuButton as Button
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuCard as Card
+import io.github.xgl34222220.ziyu.ui.theme.ZiyuCardDefaults
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import io.github.xgl34222220.ziyu.ui.design.ZiyuCircularProgressIndicator as CircularProgressIndicator
+import io.github.xgl34222220.ziyu.ui.design.ZiyuHorizontalDivider as HorizontalDivider
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIcon as Icon
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIconButton as IconButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuLinearProgressIndicator as LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuOutlinedButton as OutlinedButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -59,71 +60,90 @@ import io.github.xgl34222220.ziyu.MixSlot
 import io.github.xgl34222220.ziyu.NativeFontPreview
 import io.github.xgl34222220.ziyu.ui.font.fontCapabilityLabel
 import io.github.xgl34222220.ziyu.ui.theme.LocalDockContentPadding
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuThemeTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuHeaderAction
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuTopBar
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuShapeTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalUiStyle
+import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
+import io.github.xgl34222220.ziyu.ui.design.ZiyuListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.ui.semantics.Role
 import kotlin.math.roundToInt
 
 @Composable
-internal fun FontStudioScreenMiuix(
+internal fun FontStudioScreenMiuix(state: FontStudioUiState, actions: FontStudioActions, topAction: @Composable () -> Unit) {
+    FontStudioPageNative(UiStyle.MIUIX, state, actions, topAction)
+}
+
+@Composable
+internal fun FontStudioScreenCoui(state: FontStudioUiState, actions: FontStudioActions, topAction: @Composable () -> Unit) {
+    FontStudioPageNative(UiStyle.COUI, state, actions, topAction)
+}
+
+@Composable
+private fun FontStudioPageNative(
+    style: UiStyle,
     state: FontStudioUiState,
     actions: FontStudioActions,
     topAction: @Composable () -> Unit,
 ) {
+    val layout = LocalZiyuThemeTokens.current.layout
     val applyRequester = remember { BringIntoViewRequester() }
     LaunchedEffect(state.busy, state.taskState) {
         if (state.busy || state.taskState == "success" || state.taskState == "failed") {
             applyRequester.bringIntoView()
         }
     }
-    val dockBottomPadding = maxOf(LocalDockContentPadding.current, ZiyuLayoutTokens.FloatingDockSafeBottom)
+    val dockBottomPadding = maxOf(LocalDockContentPadding.current, layout.dockSafeBottom)
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            start = ZiyuLayoutTokens.PageHorizontal,
-            end = ZiyuLayoutTokens.PageHorizontal,
+            start = layout.pageHorizontal,
+            end = layout.pageHorizontal,
             bottom = dockBottomPadding,
         ),
-        verticalArrangement = Arrangement.spacedBy(ZiyuLayoutTokens.ItemGap),
+        verticalArrangement = Arrangement.spacedBy(layout.itemGap),
     ) {
-        item { MiuixStudioHeader(state.loading, actions.refresh, topAction) }
-        item { MiuixCompositionMap(state, actions) }
-        item { StudioLatinTuneControls(state, actions) }
+        item { NativeStudioHeader(state.loading, actions.refresh, topAction) }
+        item { NativeCompositionMap(state, actions) }
+        if (style == UiStyle.MIUIX) item { StudioLatinTuneControls(state, actions) }
 
         if (state.loading) {
             item { LinearProgressIndicator(Modifier.fillMaxWidth().height(4.dp)) }
         }
         if (state.error.isNotBlank()) {
-            item { MiuixStudioNotice(state.error, error = true) }
+            item { NativeStudioNotice(state.error, error = true) }
         }
 
         state.slots.forEach { slotState ->
             item(key = slotState.slot.name) {
-                MiuixSlotCard(slotState, state.busy || state.operationBusy, actions)
+                NativeSlotCard(slotState, state.busy || state.operationBusy, actions)
             }
         }
+        if (style == UiStyle.COUI) item { StudioLatinTuneControls(state, actions) }
 
         item {
             Column(modifier = Modifier.bringIntoViewRequester(applyRequester),
                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                MiuixFinalAction(state, actions)
+                NativeFinalAction(state, actions)
                 if (state.busy || state.taskState == "success" || state.taskState == "failed") {
-                    MiuixStudioTask(state)
+                    NativeStudioTask(state)
                     if (state.busy || state.operationBusy) {
-                        androidx.compose.material3.OutlinedButton(onClick = actions.cancel, modifier = Modifier.fillMaxWidth()) { Text("终止当前任务") }
+                        OutlinedButton(onClick = actions.cancel, modifier = Modifier.fillMaxWidth()) { Text("终止当前任务") }
                     }
                 }
             }
         }
         item { ZiyuSectionHeading("字形覆盖", "需要时查看所选中文字体包含哪些字符") }
-        item { MiuixCoverageGroup(state, actions) }
+        item { NativeCoverageGroup(state, actions) }
     }
 }
 
 @Composable
-private fun MiuixStudioHeader(loading: Boolean, onRefresh: () -> Unit, topAction: @Composable () -> Unit) {
-    val tokens = LocalMiuixTokens.current
+private fun NativeStudioHeader(loading: Boolean, onRefresh: () -> Unit, topAction: @Composable () -> Unit) {
+    val tokens = LocalZiyuPaletteTokens.current
     val actionColor = MaterialTheme.colorScheme.primary
     ZiyuTopBar(title = "字体组合") {
         Row(
@@ -137,7 +157,7 @@ private fun MiuixStudioHeader(loading: Boolean, onRefresh: () -> Unit, topAction
                 onClick = onRefresh,
                 enabled = !loading,
                 loading = loading,
-                containerColor = tokens.elevatedCardBackground,
+                containerColor = Color.Transparent,
                 contentColor = actionColor,
             )
         }
@@ -145,31 +165,23 @@ private fun MiuixStudioHeader(loading: Boolean, onRefresh: () -> Unit, topAction
 }
 
 @Composable
-private fun MiuixCompositionMap(state: FontStudioUiState, actions: FontStudioActions) {
-    val tokens = LocalMiuixTokens.current
-    val shape = ZiyuShapeTokens.Large
+private fun NativeCompositionMap(state: FontStudioUiState, actions: FontStudioActions) {
+    val tokens = LocalZiyuPaletteTokens.current
+    val layout = LocalZiyuThemeTokens.current.layout
+    val coui = LocalUiStyle.current == UiStyle.COUI
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = shape,
         colors = CardDefaults.cardColors(containerColor = tokens.cardBackground),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.primary.copy(alpha = .08f),
-                            Color.Transparent,
-                        ),
-                    ),
-                )
-                .padding(ZiyuLayoutTokens.CardPadding),
+                .padding(layout.cardPadding),
         ) {
-            Text("组合你的专属字体", color = tokens.textPrimary, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-            Text("本次选择预览", color = tokens.textSecondary, fontSize = 13.sp)
+            Text(if (coui) "字体搭配" else "组合你的专属字体", color = tokens.textPrimary, style = MaterialTheme.typography.titleMedium)
+            Text("本次选择预览", color = tokens.textSecondary, style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(8.dp))
-            Surface(
+            if (coui) StudioSelectionPreview(state.slots) else Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
                 color = tokens.elevatedCardBackground,
@@ -177,9 +189,23 @@ private fun MiuixCompositionMap(state: FontStudioUiState, actions: FontStudioAct
                 StudioSelectionPreview(state.slots)
             }
             Spacer(Modifier.height(14.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            if (coui) {
+                val pickerEnabled = !state.busy && !state.operationBusy
                 state.slots.forEach { slot ->
-                    MiuixSlotSummary(slot, Modifier.weight(1f), !state.busy && !state.operationBusy) { actions.pickSlot(slot.slot) }
+                    ZiyuListItem(
+                        onClick = { actions.pickSlot(slot.slot) },
+                        enabled = pickerEnabled,
+                        onClickLabel = "选择${slot.title}",
+                        headlineContent = { Text(slot.title, style = MaterialTheme.typography.titleSmall) },
+                        supportingContent = { Text(slot.font?.name ?: "未选择", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        trailingContent = { Text("选择", color = MaterialTheme.colorScheme.primary.copy(alpha = if (pickerEnabled) 1f else .38f), style = MaterialTheme.typography.labelLarge) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        contentPadding = PaddingValues(vertical = 8.dp),
+                    )
+                }
+            } else Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                state.slots.forEach { slot ->
+                    NativeSlotSummary(slot, Modifier.weight(1f), !state.busy && !state.operationBusy) { actions.pickSlot(slot.slot) }
                 }
             }
         }
@@ -187,8 +213,8 @@ private fun MiuixCompositionMap(state: FontStudioUiState, actions: FontStudioAct
 }
 
 @Composable
-private fun MiuixSlotSummary(slot: StudioSlotUiState, modifier: Modifier, enabled: Boolean, onSelect: () -> Unit) {
-    val tokens = LocalMiuixTokens.current
+private fun NativeSlotSummary(slot: StudioSlotUiState, modifier: Modifier, enabled: Boolean, onSelect: () -> Unit) {
+    val tokens = LocalZiyuPaletteTokens.current
     val sample = when (slot.slot) {
         MixSlot.Cjk -> "中"
         MixSlot.Latin -> "Aa"
@@ -201,6 +227,7 @@ private fun MiuixSlotSummary(slot: StudioSlotUiState, modifier: Modifier, enable
         shape = RoundedCornerShape(16.dp),
         color = if (slot.font == null) tokens.textPrimary.copy(alpha = .045f)
         else MaterialTheme.colorScheme.primary.copy(alpha = .11f),
+        border = ZiyuCardDefaults.border(),
     ) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 10.dp)) {
             if (slot.font != null) {
@@ -235,13 +262,13 @@ private fun MiuixSlotSummary(slot: StudioSlotUiState, modifier: Modifier, enable
 }
 
 @Composable
-private fun MiuixStudioTask(state: FontStudioUiState) {
-    val tokens = LocalMiuixTokens.current
+private fun NativeStudioTask(state: FontStudioUiState) {
+    val tokens = LocalZiyuPaletteTokens.current
+    val layout = LocalZiyuThemeTokens.current.layout
     Card(
-        shape = ZiyuShapeTokens.Large,
         colors = CardDefaults.cardColors(containerColor = tokens.cardBackground),
     ) {
-        Column(Modifier.padding(ZiyuLayoutTokens.CardPadding)) {
+        Column(Modifier.padding(layout.cardPadding)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(40.dp),
@@ -262,7 +289,7 @@ private fun MiuixStudioTask(state: FontStudioUiState) {
                     )
                     Text(state.message, color = tokens.textSecondary, fontSize = 13.sp)
                 }
-                MiuixStudioPill("${state.progress}%", MaterialTheme.colorScheme.primary)
+                NativeStudioPill("${state.progress}%", MaterialTheme.colorScheme.primary)
             }
             Spacer(Modifier.height(9.dp))
             LinearProgressIndicator(
@@ -274,22 +301,21 @@ private fun MiuixStudioTask(state: FontStudioUiState) {
 }
 
 @Composable
-private fun MiuixSlotCard(
+private fun NativeSlotCard(
     slotState: StudioSlotUiState,
     busy: Boolean,
     actions: FontStudioActions,
 ) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
+    val layout = LocalZiyuThemeTokens.current.layout
     val font = slotState.font
-    val shape = ZiyuShapeTokens.Large
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = shape,
         colors = CardDefaults.cardColors(containerColor = tokens.cardBackground),
     ) {
-        Column(Modifier.padding(ZiyuLayoutTokens.CardPadding)) {
+        Column(Modifier.padding(layout.cardPadding)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
+                if (LocalUiStyle.current == UiStyle.MIUIX) Surface(
                     modifier = Modifier.size(44.dp),
                     shape = RoundedCornerShape(15.dp),
                     color = MaterialTheme.colorScheme.primary.copy(alpha = .11f),
@@ -309,20 +335,20 @@ private fun MiuixSlotCard(
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(slotState.title, color = tokens.textPrimary, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                    Text(slotState.subtitle, color = tokens.textSecondary, fontSize = 13.sp)
+                    Text(slotState.title, color = tokens.textPrimary, style = MaterialTheme.typography.titleMedium)
+                    Text(slotState.subtitle, color = tokens.textSecondary, style = MaterialTheme.typography.bodySmall)
                 }
             }
             if (font != null) {
                 Spacer(Modifier.height(10.dp))
-                MiuixStudioPill(fontCapabilityLabel(font), MaterialTheme.colorScheme.primary)
+                NativeStudioPill(fontCapabilityLabel(font), MaterialTheme.colorScheme.primary)
             }
 
             Spacer(Modifier.height(10.dp))
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = !busy) { actions.pickSlot(slotState.slot) },
+                    .clickable(enabled = !busy, role = Role.Button) { actions.pickSlot(slotState.slot) },
                 shape = RoundedCornerShape(16.dp),
                 color = tokens.textPrimary.copy(alpha = .04f),
             ) {
@@ -364,7 +390,7 @@ private fun MiuixSlotCard(
                     )
                 }
                 Spacer(Modifier.height(10.dp))
-                MiuixStudioAxisControls(
+                NativeStudioAxisControls(
                     font = font,
                     weight = slotState.weight,
                     axes = slotState.axes,
@@ -378,17 +404,17 @@ private fun MiuixSlotCard(
 }
 
 @Composable
-private fun MiuixCoverageGroup(state: FontStudioUiState, actions: FontStudioActions) {
-    val tokens = LocalMiuixTokens.current
+private fun NativeCoverageGroup(state: FontStudioUiState, actions: FontStudioActions) {
+    val tokens = LocalZiyuPaletteTokens.current
+    val layout = LocalZiyuThemeTokens.current.layout
     val cjk = state.slots.firstOrNull { it.slot == MixSlot.Cjk }
     val fontId = cjk?.font?.id.orEmpty()
     val probe = state.coverage
     val metrics = probe.metrics.takeIf { probe.fontId == fontId }
     Card(
-        shape = ZiyuShapeTokens.Large,
         colors = CardDefaults.cardColors(containerColor = tokens.cardBackground),
     ) {
-        Column(Modifier.padding(ZiyuLayoutTokens.CardPadding)) {
+        Column(Modifier.padding(layout.cardPadding)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("所选字体覆盖率", color = tokens.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
@@ -405,13 +431,13 @@ private fun MiuixCoverageGroup(state: FontStudioUiState, actions: FontStudioActi
             }
             if (metrics != null) {
                 Spacer(Modifier.height(12.dp))
-                MiuixCoverageRow("中文", metrics.cjkRatio)
+                NativeCoverageRow("中文", metrics.cjkRatio)
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .42f))
-                MiuixCoverageRow("英文", metrics.latinRatio)
+                NativeCoverageRow("英文", metrics.latinRatio)
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .42f))
-                MiuixCoverageRow("数字", metrics.digitRatio)
+                NativeCoverageRow("数字", metrics.digitRatio)
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .42f))
-                MiuixCoverageRow("标点", metrics.punctuationRatio)
+                NativeCoverageRow("标点", metrics.punctuationRatio)
                 if (metrics.missingSample.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
                     Surface(
@@ -435,8 +461,8 @@ private fun MiuixCoverageGroup(state: FontStudioUiState, actions: FontStudioActi
 }
 
 @Composable
-private fun MiuixCoverageRow(label: String, ratio: Float) {
-    val tokens = LocalMiuixTokens.current
+private fun NativeCoverageRow(label: String, ratio: Float) {
+    val tokens = LocalZiyuPaletteTokens.current
     Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = tokens.textPrimary, modifier = Modifier.width(42.dp), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         LinearProgressIndicator(
@@ -449,8 +475,9 @@ private fun MiuixCoverageRow(label: String, ratio: Float) {
 }
 
 @Composable
-private fun MiuixFinalAction(state: FontStudioUiState, actions: FontStudioActions) {
-    val tokens = LocalMiuixTokens.current
+private fun NativeFinalAction(state: FontStudioUiState, actions: FontStudioActions) {
+    val tokens = LocalZiyuPaletteTokens.current
+    val layout = LocalZiyuThemeTokens.current.layout
     val direct = state.directApplyFontId
     val selectionReady = state.slots.size == MixSlot.entries.size && state.slots.all { it.font?.valid == true }
     val shape = ZiyuShapeTokens.Large
@@ -459,7 +486,7 @@ private fun MiuixFinalAction(state: FontStudioUiState, actions: FontStudioAction
         shape = shape,
         colors = CardDefaults.cardColors(containerColor = tokens.cardBackground),
     ) {
-        Column(Modifier.padding(ZiyuLayoutTokens.CardPadding)) {
+        Column(Modifier.padding(layout.cardPadding)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(44.dp),
@@ -517,12 +544,13 @@ private fun MiuixFinalAction(state: FontStudioUiState, actions: FontStudioAction
 }
 
 @Composable
-private fun MiuixStudioNotice(message: String, error: Boolean) {
-    val tokens = LocalMiuixTokens.current
+private fun NativeStudioNotice(message: String, error: Boolean) {
+    val tokens = LocalZiyuPaletteTokens.current
+    val containerColor = if (error) MaterialTheme.colorScheme.errorContainer else tokens.cardBackground
     Surface(
-        shape = ZiyuShapeTokens.Large,
-        color = if (error) MaterialTheme.colorScheme.errorContainer else tokens.cardBackground,
-        shadowElevation = 0.dp,
+        color = containerColor,
+        border = ZiyuCardDefaults.border(containerColor),
+        shadowElevation = LocalZiyuThemeTokens.current.layout.cardElevation,
     ) {
         Row(Modifier.fillMaxWidth().padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(
@@ -542,7 +570,7 @@ private fun MiuixStudioNotice(message: String, error: Boolean) {
 }
 
 @Composable
-private fun MiuixStudioPill(text: String, color: Color) {
+private fun NativeStudioPill(text: String, color: Color) {
     Surface(shape = RoundedCornerShape(999.dp), color = color.copy(alpha = .12f)) {
         Text(
             text,

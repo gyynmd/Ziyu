@@ -20,13 +20,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuAlertDialog as AlertDialog
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIcon as Icon
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,7 +46,7 @@ import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.ziyu.MixSlot
 import io.github.xgl34222220.ziyu.NativeFontPreview
 import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
 
 internal enum class StudioPreviewScenario(val label: String) {
     MIXED("混排"),
@@ -84,7 +84,7 @@ internal fun StudioPreviewLauncher(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     Surface(
         onClick = onClick,
         enabled = enabled,
@@ -121,7 +121,7 @@ internal fun StudioCompositePreviewDialog(
     val miuix = style == UiStyle.MIUIX
 
     StudioPreviewTheme(previewDark) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     val container = if (miuix) tokens.elevatedCardBackground else MaterialTheme.colorScheme.surfaceContainerHigh
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -233,7 +233,7 @@ private fun PreviewScenarioSelector(
 
 @Composable
 private fun PreviewReferenceCard(style: UiStyle, scenario: StudioPreviewScenario) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     PreviewPanel(
         title = "A · 当前系统字体",
         subtitle = "作为视觉比例和基线参考",
@@ -288,7 +288,7 @@ private fun PreviewPanel(
     style: UiStyle,
     content: @Composable () -> Unit,
 ) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(if (style == UiStyle.MIUIX) 28.dp else 23.dp),

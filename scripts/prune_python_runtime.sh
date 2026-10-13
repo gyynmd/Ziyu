@@ -71,6 +71,11 @@ rm -f \
 # vendored FontTools package directly and never performs package discovery on-device.
 rm -rf "$PYLIB/site-packages/fonttools-4.63.0.dist-info"
 
+# Installed package/API prose is not imported by either Python or the font tools.
+# License texts remain in the runtime and module licenses directory.
+rm -f "$PYLIB/site-packages/README.txt" \
+  "$PYLIB/site-packages/fontTools/ttLib/tables/table_API_readme.txt"
+
 # CPython test/demo extensions and build metadata are never needed on-device. Match the complete
 # families instead of maintaining an error-prone list that misses new test modules between releases.
 find "$DYN" -maxdepth 1 -type f \( \

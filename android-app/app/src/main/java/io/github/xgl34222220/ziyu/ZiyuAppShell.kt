@@ -1,5 +1,6 @@
 package io.github.xgl34222220.ziyu
 
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -8,6 +9,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import io.github.xgl34222220.ziyu.ui.theme.ZiyuMotionTokens
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -15,12 +17,14 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -43,13 +47,12 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.ListAlt
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalContentColor
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIcon as Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar as MaterialNavigationBar
 import androidx.compose.material3.NavigationBarItem as MaterialNavigationBarItem
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
 import androidx.compose.runtime.DisposableEffect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -72,12 +75,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -92,6 +92,9 @@ import io.github.xgl34222220.ziyu.ui.appearance.AppearanceViewModel
 import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
 import io.github.suqi8.coui.kmp.basic.NavigationBar as CouiNavigationBar
 import io.github.suqi8.coui.kmp.basic.NavigationBarItem as CouiNavigationBarItem
+import top.yukonga.miuix.kmp.basic.NavigationBar as MiuixNavigationBar
+import top.yukonga.miuix.kmp.basic.NavigationBarItem as MiuixNavigationBarItem
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import io.github.suqi8.coui.kmp.theme.COUITheme
 import io.github.xgl34222220.ziyu.ui.dialogs.FontActionDialogRoute
 import io.github.xgl34222220.ziyu.ui.dialogs.FontActionKind
@@ -115,8 +118,10 @@ import io.github.xgl34222220.ziyu.ui.studio.FontStudioActions
 import io.github.xgl34222220.ziyu.ui.studio.FontStudioRoute
 import io.github.xgl34222220.ziyu.ui.studio.toFontStudioUiState
 import io.github.xgl34222220.ziyu.ui.theme.LocalDockContentPadding
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuThemeTokens
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuTheme
+import io.github.xgl34222220.ziyu.ui.theme.ZiyuGlassDockSurface
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -259,7 +264,6 @@ internal fun ZiyuAppShell(
     val validFonts = remember(viewModel.fonts) { viewModel.fonts.filter { it.valid } }
 
     ZiyuTheme(appearance) {
-        val dark = MaterialTheme.colorScheme.background.luminance() < .5f
         val showDock = page != AppPage.Logs && !(page == AppPage.Settings && settingsDetailVisible)
         val quickReturnEnabled = appearance.uiStyle == UiStyle.MIUIX && appearance.floatingDock &&
             showDock &&
@@ -274,24 +278,27 @@ internal fun ZiyuAppShell(
         var programmaticPageTarget by remember { mutableStateOf<Int?>(null) }
         LaunchedEffect(page, pagerState) {
             val target = dockPages.indexOf(page)
-            if (target >= 0 && pagerState.settledPage != target) {
+            if (target >= 0 && (pagerState.settledPage != target ||
+                    pagerState.currentPage != target || kotlin.math.abs(pagerState.currentPageOffsetFraction) > .001f)) {
                 programmaticPageTarget = target
                 try {
-                    if (kotlin.math.abs(pagerState.settledPage - target) == 1) {
-                        pagerState.animateScrollToPage(target)
-                    } else {
-                        pagerState.scrollToPage(target)
-                    }
+                    pagerState.animateScrollToPage(
+                        target,
+                        animationSpec = tween(ZiyuMotionTokens.Emphasized, easing = FastOutSlowInEasing),
+                    )
                 } finally {
                     programmaticPageTarget = null
                 }
             }
         }
         LaunchedEffect(pagerState) {
-            snapshotFlow { pagerState.settledPage to programmaticPageTarget }
+            snapshotFlow {
+                if (programmaticPageTarget == null && !pagerState.isScrollInProgress &&
+                    kotlin.math.abs(pagerState.currentPageOffsetFraction) <= .001f) pagerState.settledPage else null
+            }
                 .distinctUntilChanged()
-                .collect { (index, target) ->
-                    if (target == null && page != AppPage.Logs) {
+                .collect { index ->
+                    if (index != null && page != AppPage.Logs) {
                         val selected = dockPages[index]
                         if (page != selected) page = selected
                     }
@@ -332,14 +339,9 @@ internal fun ZiyuAppShell(
             }
         }
         val dockActuallyVisible = showDock && !dockHiddenByScroll
-        val blurActive = appearance.uiStyle == UiStyle.MIUIX &&
-            appearance.floatingDock &&
-            appearance.blurEnabled &&
-            appearance.glassEnabled &&
-            showDock
         val liquidBackdrop = rememberLayerBackdrop()
-        val liquidGlassSupported = blurActive &&
-            appearance.uiStyle == UiStyle.MIUIX &&
+        val liquidGlassSupported = appearance.floatingDock && appearance.glassEnabled &&
+            dockActuallyVisible && Build.VERSION.SDK_INT >= 33 &&
             isRuntimeShaderSupported()
         val navigationBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         // Every primary page owns its scrollable bottom clearance. Keep one inset source so
@@ -348,7 +350,7 @@ internal fun ZiyuAppShell(
         val dockPaddingTarget = if (showDock) {
             navigationBottom + when {
                 dockHiddenByScroll -> 28.dp
-                appearance.uiStyle == UiStyle.MATERIAL -> 80.dp
+                appearance.uiStyle == UiStyle.MATERIAL -> 80.dp + if (appearance.floatingDock) LocalZiyuThemeTokens.current.layout.dockBottomGap else 0.dp
                 appearance.floatingDock -> 72.dp
                 else -> 56.dp
             }
@@ -369,7 +371,7 @@ internal fun ZiyuAppShell(
             ),
         ) {
             Box(modifier = contentModifier) {
-                AppBackdrop(appearance, dark)
+                AppBackdrop()
                 val pageContent: @Composable (AppPage) -> Unit = { visiblePage ->
                     when (visiblePage) {
                         AppPage.Home -> Box(
@@ -427,7 +429,7 @@ internal fun ZiyuAppShell(
                                     .then(
                                         if (appearance.uiStyle == UiStyle.MIUIX) {
                                             Modifier
-                                                .background(LocalMiuixTokens.current.pageBackground)
+                                                .background(LocalZiyuPaletteTokens.current.pageBackground)
                                         } else {
                                             Modifier
                                         },
@@ -468,6 +470,10 @@ internal fun ZiyuAppShell(
                     HorizontalPager(
                         state = pagerState,
                         modifier = Modifier.fillMaxSize(),
+                        flingBehavior = PagerDefaults.flingBehavior(
+                            state = pagerState,
+                            snapAnimationSpec = tween(ZiyuMotionTokens.Normal, easing = FastOutSlowInEasing),
+                        ),
                         userScrollEnabled = !settingsDetailVisible,
                         key = { dockPages[it] },
                     ) { index ->
@@ -493,6 +499,8 @@ internal fun ZiyuAppShell(
                     UiStyle.MATERIAL -> MaterialAppDock(
                         current = dockPage,
                         onSelect = { page = it },
+                        appearance = appearance,
+                        backdrop = liquidBackdrop,
                     )
                     UiStyle.MIUIX -> MiuixAppDock(
                         current = dockPage,
@@ -504,6 +512,7 @@ internal fun ZiyuAppShell(
                         current = dockPage,
                         onSelect = { page = it },
                         appearance = appearance,
+                        backdrop = liquidBackdrop,
                     )
                 }
             }
@@ -585,72 +594,20 @@ internal fun ZiyuAppShell(
 }
 
 @Composable
-private fun AppBackdrop(appearance: AppearanceSettings, dark: Boolean) {
-    val scheme = MaterialTheme.colorScheme
-    val miuix = appearance.uiStyle == UiStyle.MIUIX
-    val base = when {
-        miuix -> listOf(LocalMiuixTokens.current.pageBackground, LocalMiuixTokens.current.pageBackground)
-        dark -> listOf(scheme.background, scheme.surfaceContainerLow, scheme.background)
-        else -> listOf(scheme.background, scheme.surfaceContainerLowest, scheme.background)
-    }
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(base))
-            .drawBehind {
-                if (miuix && dark) return@drawBehind
-                if (miuix) {
-                    drawRect(
-                        Brush.radialGradient(
-                            listOf(scheme.primary.copy(alpha = if (dark) .09f else .10f), Color.Transparent),
-                            center = Offset(size.width * .92f, size.height * .02f),
-                            radius = size.width * .85f,
-                        ),
-                    )
-                    drawRect(
-                        Brush.radialGradient(
-                            listOf(scheme.secondary.copy(alpha = if (dark) .06f else .07f), Color.Transparent),
-                            center = Offset(size.width * .04f, size.height * .82f),
-                            radius = size.width,
-                        ),
-                    )
-                } else {
-                    drawRect(
-                        Brush.radialGradient(
-                            listOf(scheme.secondary.copy(alpha = if (dark) .13f else .20f), Color.Transparent),
-                            center = Offset(size.width * .9f, size.height * .06f),
-                            radius = size.width * .72f,
-                        ),
-                    )
-                    drawRect(
-                        Brush.radialGradient(
-                            listOf(scheme.primary.copy(alpha = if (dark) .10f else .16f), Color.Transparent),
-                            center = Offset(size.width * .02f, size.height * .54f),
-                            radius = size.width * .82f,
-                        ),
-                    )
-                }
-            },
-    )
+private fun AppBackdrop() {
+    Box(Modifier.fillMaxSize().background(LocalZiyuPaletteTokens.current.pageBackground))
 }
-
 @Composable
 private fun MaterialAppDock(
     current: AppPage,
     onSelect: (AppPage) -> Unit,
+    appearance: AppearanceSettings,
+    backdrop: LayerBackdrop,
     modifier: Modifier = Modifier,
 ) {
-    MaterialNavigationBar(
-        modifier = modifier.fillMaxWidth(),
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        windowInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout).only(
-            WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
-        ),
-    ) {
+    val navigationItems: @Composable RowScope.() -> Unit = {
         dockPages.forEach { destination ->
             val selected = current == destination
-            // NavigationBarItem supplies its own RowScope weight; an extra weight modifier
-            // constrains the item twice and can hide the remaining destinations.
             MaterialNavigationBarItem(
                 selected = selected,
                 onClick = { if (!selected) onSelect(destination) },
@@ -658,6 +615,31 @@ private fun MaterialAppDock(
                 label = { Text(destination.label, maxLines = 1) },
             )
         }
+    }
+    if (appearance.floatingDock) {
+        val layout = LocalZiyuThemeTokens.current.layout
+        val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        ZiyuGlassDockSurface(
+            appearance = appearance, backdrop = backdrop, shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            modifier = modifier.padding(start = layout.dockHorizontal, end = layout.dockHorizontal, bottom = bottomInset + layout.dockBottomGap),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().height(80.dp).padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                content = navigationItems,
+            )
+        }
+    } else {
+        MaterialNavigationBar(
+            modifier = modifier.fillMaxWidth(),
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            tonalElevation = 0.dp,
+            windowInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout).only(
+                WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
+            ),
+            content = navigationItems,
+        )
     }
 }
 
@@ -670,16 +652,18 @@ private fun MiuixAppDock(
     modifier: Modifier = Modifier,
 ) {
     if (appearance.floatingDock) {
+        val layout = LocalZiyuThemeTokens.current.layout
         val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-        val bottomPadding = if (bottomInset != 0.dp) 8.dp + bottomInset else 28.dp
+        val bottomPadding = if (bottomInset != 0.dp) layout.dockBottomGap + bottomInset else 28.dp
         FloatingBottomBar(
             modifier = modifier
-                .padding(start = 28.dp, end = 28.dp, bottom = bottomPadding),
+                .padding(start = layout.dockHorizontal, end = layout.dockHorizontal, bottom = bottomPadding),
             selectedIndex = dockPages.indexOf(current).coerceIn(dockPages.indices),
             onSelected = { index -> dockPages.getOrNull(index)?.let(onSelect) },
             backdrop = backdrop,
             tabsCount = dockPages.size,
-            isBlurEnabled = appearance.glassEnabled && appearance.blurEnabled,
+            isBlurEnabled = appearance.blurEnabled,
+            isGlassEnabled = appearance.glassEnabled,
         ) { activateTab ->
             dockPages.forEachIndexed { index, destination ->
                 FloatingBottomBarItem(
@@ -700,17 +684,17 @@ private fun MiuixAppDock(
             }
         }
     } else {
-        MaterialNavigationBar(
+        MiuixNavigationBar(
             modifier = modifier.fillMaxWidth(),
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            color = MiuixTheme.colorScheme.surfaceContainer,
         ) {
             dockPages.forEach { destination ->
                 val selected = current == destination
-                MaterialNavigationBarItem(
+                MiuixNavigationBarItem(
                     selected = selected,
                     onClick = { if (!selected) onSelect(destination) },
-                    icon = { Icon(destination.icon, contentDescription = null) },
-                    label = { Text(destination.label, maxLines = 1) },
+                    icon = destination.icon,
+                    label = destination.label,
                 )
             }
         }
@@ -722,16 +706,19 @@ private fun CouiAppDock(
     current: AppPage,
     onSelect: (AppPage) -> Unit,
     appearance: AppearanceSettings,
+    backdrop: LayerBackdrop,
     modifier: Modifier = Modifier,
 ) {
     if (appearance.floatingDock) {
+        val layout = LocalZiyuThemeTokens.current.layout
         val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-        val bottomPadding = if (bottomInset != 0.dp) 8.dp + bottomInset else 28.dp
-        Surface(
-            modifier = modifier.padding(start = 24.dp, end = 24.dp, bottom = bottomPadding),
+        val bottomPadding = if (bottomInset != 0.dp) layout.dockBottomGap + bottomInset else 28.dp
+        ZiyuGlassDockSurface(
+            appearance = appearance,
+            backdrop = backdrop,
+            modifier = modifier.padding(start = layout.dockHorizontal, end = layout.dockHorizontal, bottom = bottomPadding),
             shape = RoundedCornerShape(28.dp),
             color = COUITheme.colorScheme.surfaceContainer,
-            shadowElevation = 8.dp,
         ) {
             CouiNavigationBar(
                 color = Color.Transparent,

@@ -1,8 +1,9 @@
 package io.github.xgl34222220.ziyu.ui.studio
 
-import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import io.github.xgl34222220.ziyu.ui.theme.ZiyuMotionTokens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,12 +22,12 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.ListAlt
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIcon as Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import io.github.xgl34222220.ziyu.ui.design.ZiyuModalBottomSheet as ModalBottomSheet
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
+import io.github.xgl34222220.ziyu.ui.design.rememberZiyuModalBottomSheetState as rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,7 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuGlyph
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuHeaderAction
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuIconTokens
@@ -60,16 +61,16 @@ internal fun StudioToolLauncher(
 ) {
     var menuVisible by remember { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val parentScale by animateFloatAsState(
         targetValue = if (childLayerActive) .96f else 1f,
-        animationSpec = spring(dampingRatio = .86f, stiffness = Spring.StiffnessMediumLow),
+        animationSpec = tween(ZiyuMotionTokens.Emphasized, easing = FastOutSlowInEasing),
         label = "studioToolParentScale",
     )
     val parentAlpha by animateFloatAsState(
         targetValue = if (childLayerActive) .82f else 1f,
-        animationSpec = spring(dampingRatio = .90f, stiffness = Spring.StiffnessMedium),
+        animationSpec = tween(ZiyuMotionTokens.Emphasized, easing = FastOutSlowInEasing),
         label = "studioToolParentAlpha",
     )
     val background = when {

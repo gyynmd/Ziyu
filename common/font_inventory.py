@@ -74,6 +74,7 @@ UI_FAMILY_PREFIXES = (
     "oppo-sans",
     "opposans",
     "coloros-sans",
+    "vivo-sans", "vivosans", "vivo-sans-vf", "origin-sans", "originos-sans", "iqoo-sans",
 )
 DENY_FAMILY_TOKENS = ("serif", "mono", "emoji", "symbol", "icon", "math", "music")
 SANS_SERIF_UI_SUFFIX_TOKENS = {

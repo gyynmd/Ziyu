@@ -7,8 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,19 +22,21 @@ internal fun ZiyuSurfaceCard(
     emphasized: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val tokens = LocalMiuixTokens.current
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        color = if (emphasized) {
+    val tokens = LocalZiyuPaletteTokens.current
+    val layout = LocalZiyuThemeTokens.current.layout
+    val surfaceColor = if (emphasized) {
             lerp(tokens.cardBackground, MaterialTheme.colorScheme.primaryContainer, .16f)
-        } else tokens.cardBackground,
-        contentColor = tokens.textPrimary,
-        shadowElevation = ZiyuLayoutTokens.CardElevation,
+        } else tokens.cardBackground
+    ZiyuCard(
+        modifier = modifier.fillMaxWidth(),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = surfaceColor,
+            contentColor = tokens.textPrimary,
+        ),
     ) {
         Column(
-            modifier = Modifier.padding(ZiyuLayoutTokens.CardPadding),
-            verticalArrangement = Arrangement.spacedBy(ZiyuLayoutTokens.ItemGap),
+            modifier = Modifier.padding(layout.cardPadding),
+            verticalArrangement = Arrangement.spacedBy(layout.itemGap),
             content = content,
         )
     }
@@ -48,7 +49,7 @@ internal fun ZiyuSectionHeading(
     modifier: Modifier = Modifier,
     action: @Composable () -> Unit = {},
 ) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     Row(
         modifier = modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,

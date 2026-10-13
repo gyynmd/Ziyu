@@ -39,14 +39,17 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Warning
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuCard as Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIcon as Icon
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIconButton as IconButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuLinearProgressIndicator as LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.ListItemDefaults
+import io.github.xgl34222220.ziyu.ui.design.ZiyuListItem
+import io.github.xgl34222220.ziyu.ui.theme.LocalUiStyle
+import io.github.xgl34222220.ziyu.ui.design.ZiyuOutlinedTextField as OutlinedTextField
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -70,18 +73,22 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuThemeTokens
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuDetailBar
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuHeaderAction
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuSectionHeading
+import io.github.xgl34222220.ziyu.ui.theme.ZiyuSegmentedTabs
 
 private enum class LogsTab(val label: String) {
     TASKS("刷写"), ISSUES("问题"), LOGS("日志"),
 }
+private val logTabLabels = LogsTab.entries.map(LogsTab::label)
 
 private enum class LogFilter(val label: String) {
     ALL("全部"), WARNING("警告"), ERROR("错误"),
 }
+private val logFilterLabels = LogFilter.entries.map(LogFilter::label)
 
 private fun logMatchesFilter(line: String, filter: LogFilter): Boolean = when (filter) {
     LogFilter.ALL -> true
@@ -90,7 +97,7 @@ private fun logMatchesFilter(line: String, filter: LogFilter): Boolean = when (f
 }
 
 @Composable
-internal fun LogsScreenCompact(
+internal fun LogsPageContent(
     style: UiStyle,
     state: LogsUiState,
     actions: LogsActions,
@@ -99,7 +106,8 @@ internal fun LogsScreenCompact(
     onBack: () -> Unit,
     controlsBottomPadding: Dp = 0.dp,
 ) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
+    val layout = LocalZiyuThemeTokens.current.layout
     val clipboard = LocalClipboardManager.current
     var tabName by rememberSaveable { mutableStateOf(LogsTab.TASKS.name) }
     var filterName by rememberSaveable { mutableStateOf(LogFilter.ALL.name) }
@@ -127,12 +135,24 @@ internal fun LogsScreenCompact(
                 containerColor = tokens.elevatedCardBackground,
             )
         }
-        LogTabSelector(tab) { tabName = it.name }
+        ZiyuSegmentedTabs(
+            labels = logTabLabels,
+            selectedIndex = LogsTab.entries.indexOf(tab),
+            onSelected = { LogsTab.entries.getOrNull(it)?.let { selected -> tabName = selected.name } },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = layout.pageHorizontal),
+        )
         LazyColumn(
             state = when (tab) { LogsTab.TASKS -> taskListState; LogsTab.ISSUES -> issueListState; LogsTab.LOGS -> logListState },
             modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(start = 20.dp, top = 16.dp, end = 20.dp, bottom = controlsBottomPadding + 28.dp),
-            verticalArrangement = Arrangement.spacedBy(if (tab == LogsTab.LOGS) 8.dp else 12.dp),
+            contentPadding = PaddingValues(
+                start = layout.pageHorizontal,
+                top = layout.pageTop + 8.dp,
+                end = layout.pageHorizontal,
+                bottom = controlsBottomPadding + layout.dockSafeBottom / 3,
+            ),
+            verticalArrangement = Arrangement.spacedBy(
+                if (tab == LogsTab.LOGS) layout.compactPadding / 2 else layout.itemGap - 4.dp,
+            ),
         ) {
             when (tab) {
                 LogsTab.TASKS -> {
@@ -194,7 +214,7 @@ internal fun LogsScreenCompact(
                 }
                 LogsTab.LOGS -> {
                     item(key = "log-summary") {
-                        Card(shape = MaterialTheme.shapes.large, colors = CardDefaults.cardColors(containerColor = tokens.cardBackground)) {
+                        Card(colors = CardDefaults.cardColors(containerColor = tokens.cardBackground)) {
                             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Metric("日志", state.lineCount, MaterialTheme.colorScheme.primary, Modifier.weight(1f))
@@ -225,11 +245,11 @@ internal fun LogsScreenCompact(
                                     singleLine = true,
                                     shape = RoundedCornerShape(16.dp),
                                 )
-                                Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    LogFilter.entries.forEach { option ->
-                                        ChoiceChip(option.label, option == filter, Modifier.weight(1f)) { filterName = option.name }
-                                    }
-                                }
+                                ZiyuSegmentedTabs(
+                                    labels = logFilterLabels,
+                                    selectedIndex = LogFilter.entries.indexOf(filter),
+                                    onSelected = { LogFilter.entries.getOrNull(it)?.let { selected -> filterName = selected.name } },
+                                )
                             }
                         }
                     }
@@ -258,41 +278,13 @@ internal fun LogsScreenCompact(
 }
 
 @Composable
-private fun LogTabSelector(selected: LogsTab, onSelected: (LogsTab) -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .65f),
-    ) {
-        Row(Modifier.fillMaxWidth().selectableGroup().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            LogsTab.entries.forEach { option -> ChoiceChip(option.label, option == selected, Modifier.weight(1f)) { onSelected(option) } }
-        }
-    }
-}
-
-@Composable
-private fun ChoiceChip(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Surface(
-        modifier = modifier.clip(RoundedCornerShape(14.dp)).selectable(selected = selected, role = Role.Tab, onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
-        color = if (selected) LocalMiuixTokens.current.cardBackground else Color.Transparent,
-        contentColor = if (selected) MaterialTheme.colorScheme.primary else LocalMiuixTokens.current.textSecondary,
-        shadowElevation = if (selected) 1.dp else 0.dp,
-    ) {
-        Box(Modifier.heightIn(min = 48.dp).padding(horizontal = 8.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
-            Text(label, textAlign = TextAlign.Center, fontSize = 14.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
-        }
-    }
-}
-
-@Composable
 private fun OverviewCard(state: LogsUiState) = FlashProgressCard(state)
 
 @Composable
 private fun IssueSummary(failedCount: Int, warningCount: Int, errorCount: Int) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     val hasIssues = failedCount > 0 || warningCount > 0 || errorCount > 0
-    Card(shape = MaterialTheme.shapes.large, colors = CardDefaults.cardColors(containerColor = tokens.cardBackground)) {
+    Card(colors = CardDefaults.cardColors(containerColor = tokens.cardBackground)) {
         Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
             StatusIcon(if (hasIssues) Icons.Rounded.Warning else Icons.Rounded.CheckCircle, if (hasIssues) tokens.warning else tokens.success)
             Spacer(Modifier.width(14.dp))
@@ -306,7 +298,8 @@ private fun IssueSummary(failedCount: Int, warningCount: Int, errorCount: Int) {
 
 @Composable
 private fun TaskCard(task: TaskCenterItem, actions: LogsActions = LogsActions(refresh = {})) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
+    val style = LocalUiStyle.current
     var expanded by rememberSaveable(task.id) { mutableStateOf(false) }
     val color = when (task.phase) {
         TaskPhase.FAILED -> MaterialTheme.colorScheme.error
@@ -318,11 +311,10 @@ private fun TaskCard(task: TaskCenterItem, actions: LogsActions = LogsActions(re
     Card(
         onClick = { expanded = !expanded },
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = tokens.cardBackground),
     ) {
-        Column(Modifier.animateContentSize(tween(220)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.animateContentSize(tween(220)).padding(if (style == UiStyle.MATERIAL) 16.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (style == UiStyle.MATERIAL) Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusIcon(taskKindIcon(task.kind), color)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -331,7 +323,19 @@ private fun TaskCard(task: TaskCenterItem, actions: LogsActions = LogsActions(re
                 }
                 Spacer(Modifier.width(8.dp))
                 Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, if (expanded) "收起任务详情" else "展开任务详情", tint = tokens.textSecondary, modifier = Modifier.size(20.dp))
-            }
+            } else ZiyuListItem(
+                headlineContent = { Text(task.title, style = MaterialTheme.typography.titleMedium) },
+                supportingContent = if (task.timeLabel.isNotBlank()) { { Text(task.timeLabel, style = MaterialTheme.typography.bodySmall) } } else null,
+                leadingContent = { Icon(taskKindIcon(task.kind), null, tint = color, modifier = Modifier.size(22.dp)) },
+                trailingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (style == UiStyle.COUI) Text(task.phase.label, color = color, style = MaterialTheme.typography.bodySmall)
+                        Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, if (expanded) "收起任务详情" else "展开任务详情", modifier = Modifier.size(20.dp))
+                    }
+                },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                contentPadding = PaddingValues(0.dp),
+            )
             Text(taskDisplayMessage(task.message), color = tokens.textSecondary, fontSize = 14.sp, lineHeight = 22.sp, maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
             if (expanded && task.message != taskDisplayMessage(task.message)) {
                 SelectionContainer { Text(task.message, color = tokens.textSecondary, fontSize = 12.sp, lineHeight = 18.sp, fontFamily = FontFamily.Monospace) }
@@ -359,13 +363,13 @@ private fun TaskCard(task: TaskCenterItem, actions: LogsActions = LogsActions(re
 
 @Composable
 private fun LogLine(number: Int, text: String) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     val color = when {
         logMatchesFilter(text, LogFilter.ERROR) -> MaterialTheme.colorScheme.error
         logMatchesFilter(text, LogFilter.WARNING) -> tokens.warning
         else -> tokens.textPrimary
     }
-    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp), color = tokens.cardBackground.copy(alpha = .65f)) {
+    Surface(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small, color = if (LocalUiStyle.current == UiStyle.MATERIAL) tokens.cardBackground else Color.Transparent) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.Top) {
             Text(number.toString(), modifier = Modifier.width(34.dp), color = tokens.textSecondary, fontSize = 11.sp, lineHeight = 19.sp, fontFamily = FontFamily.Monospace)
             SelectionContainer(Modifier.weight(1f)) {
@@ -377,10 +381,15 @@ private fun LogLine(number: Int, text: String) {
 
 @Composable
 private fun Metric(label: String, value: Int, color: Color, modifier: Modifier) {
-    Surface(modifier = modifier, shape = RoundedCornerShape(16.dp), color = color.copy(alpha = .07f)) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(value.toString(), color = color, fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold)
-            Text(label, color = LocalMiuixTokens.current.textSecondary, fontSize = 12.sp)
+    val style = LocalUiStyle.current
+    Surface(modifier = modifier, shape = MaterialTheme.shapes.medium, color = if (style == UiStyle.MATERIAL) color.copy(alpha = .07f) else Color.Transparent) {
+        Column(
+            Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+            horizontalAlignment = if (style == UiStyle.COUI) Alignment.CenterHorizontally else Alignment.Start,
+        ) {
+            Text(value.toString(), color = color, style = MaterialTheme.typography.titleLarge)
+            Text(label, color = LocalZiyuPaletteTokens.current.textSecondary, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -394,7 +403,7 @@ private fun StatusIcon(icon: ImageVector, color: Color) {
 
 @Composable
 private fun EmptyState(icon: ImageVector, title: String, message: String) {
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     Card(shape = MaterialTheme.shapes.large, colors = CardDefaults.cardColors(containerColor = tokens.cardBackground)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 30.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             StatusIcon(icon, MaterialTheme.colorScheme.primary)

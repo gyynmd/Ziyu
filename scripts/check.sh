@@ -115,7 +115,9 @@ grep -q '^description=.' "$ROOT/module.prop"
 # 发布包使用显式清单。common/ 新增运行文件必须被审查后列入，不能再整目录复制。
 PAYLOAD_MANIFEST="$ROOT/scripts/module_payload_manifest.txt"
 test -s "$PAYLOAD_MANIFEST"
-grep -Fxq "$LUOSHU_RELEASE_NOTES" "$PAYLOAD_MANIFEST"
+# Release notes are published from Git, while installed payload contains only runtime and legal files.
+test -s "$ROOT/$LUOSHU_RELEASE_NOTES"
+! grep -Eq '^(更新日志(/|$)|docs(/|$)|README\.md$)' "$PAYLOAD_MANIFEST"
 awk 'NF && $1 !~ /^#/ { if (seen[$0]++) exit 1 }' "$PAYLOAD_MANIFEST"
 while IFS= read -r payload || [ -n "$payload" ]; do
   case "$payload" in ''|\#*) continue ;; esac

@@ -12,14 +12,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuAlertDialog as AlertDialog
+import io.github.xgl34222220.ziyu.ui.design.ZiyuCircularProgressIndicator as CircularProgressIndicator
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIcon as Icon
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.ziyu.RootShell
 import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuHeaderAction
 
 internal data class DiagnosticExportState(
@@ -147,6 +147,9 @@ internal suspend fun exportSanitizedDiagnostic(): DiagnosticExportState {
             fi
         done
         for relative in config/mount-backend.conf config/mount-backend-verification.json \
+            config/mount-backend-preference.conf config/provider-reload-check.conf \
+            .ziyu-state/provider-published.conf .ziyu-state/provider-reload.started config/font-payload-manifest.conf \
+            config/temporary-root-soft-reboot.conf config/stock-font-snapshot/manifest.json logs/stock-font-snapshot.log \
             config/font-payload-next.conf config/font-payload-activated.conf \
             config/font-live.conf config/font-live-previous.conf config/font-live-boot-previous.conf \
             config/font-live-transaction.conf config/font-live-attempt.conf config/font-ui-cache.json \
@@ -182,6 +185,12 @@ internal suspend fun exportSanitizedDiagnostic(): DiagnosticExportState {
                 ;;
             *) printf 'selector=unavailable\n' >> "${'$'}OUT" ;;
         esac
+        printf '\n[mountify-scan-lock]\n' >> "${'$'}OUT"
+        ls -ld /proc/1/root/dev/mountify_single_instance >> "${'$'}OUT" 2>&1
+        for file in /dev/mountify_logs/modules /dev/mountify_logs/mountify_mount_list; do
+            printf '\n[provider-evidence:%s]\n' "${'$'}file" >> "${'$'}OUT"
+            if [ -r "${'$'}file" ]; then head -c 16384 "${'$'}file" >> "${'$'}OUT"; else printf 'unavailable\n' >> "${'$'}OUT"; fi
+        done
         printf '\n[font-mountinfo]\n' >> "${'$'}OUT"
         grep -E '/fonts|/data/adb/(metamodule|modules/[^/]+/mnt|luoshu/(self-mount|live-mount))' /proc/1/mountinfo 2>/dev/null | head -n 160 >> "${'$'}OUT"
         printf '\n[recent-operation-log]\n' >> "${'$'}OUT"
@@ -236,7 +245,7 @@ internal fun DiagnosticExportButton(
         enabled = !state.busy,
         loading = state.busy,
         containerColor = if (style == UiStyle.MIUIX) {
-            LocalMiuixTokens.current.elevatedCardBackground
+            LocalZiyuPaletteTokens.current.elevatedCardBackground
         } else {
             MaterialTheme.colorScheme.surfaceContainerHigh
         },

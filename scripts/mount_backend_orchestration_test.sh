@@ -176,15 +176,15 @@ assert_eq "$(state "$M2" selected_backend)" external 'case 2 selection'
 run_hook "$M2" KernelSU 1 pass post-mount hybrid-mount
 assert_eq "$(state "$M2" active_backend)" external 'case 2 active backend'
 
-# Case 3: External verification failure never changes the selected mode.
+# Case 3: Automatic mode tries a verified self-mount after external verification fails.
 M3="$TMP/ksu-meta-fallback"; new_module "$M3"
 run_hook "$M3" KernelSU 1 pass post-fs-data hybrid-mount
-expect_hook_failure "$M3" KernelSU 1 fail post-mount hybrid-mount
-assert_eq "$(state "$M3" selected_backend)" external 'M3 preserves the external mode'
-assert_eq "$(state "$M3" active_backend)" none 'M3 does not claim an unverified backend'
-assert_eq "$(state "$M3" verification)" failed 'M3 records route failure'
-assert_eq "$(state "$M3" fallback_used)" 0 'M3 never switches to self'
-[ ! -f "$M3/config/test-self-mounted" ] || fail 'M3 ran an unselected self backend'
+run_hook "$M3" KernelSU 1 fail post-mount hybrid-mount
+assert_eq "$(state "$M3" selected_backend)" self 'M3 selects self after the external route fails'
+assert_eq "$(state "$M3" active_backend)" self 'M3 activates only the verified self backend'
+assert_eq "$(state "$M3" verification)" passed 'M3 verifies the self route before success'
+assert_eq "$(state "$M3" fallback_used)" 1 'M3 records the automatic fallback'
+[ -f "$M3/config/test-self-mounted" ] || fail 'M3 did not try the self backend'
 
 # Case 4: Explicit KernelSU self-mount waits for post-mount.
 M4="$TMP/ksu-self"; new_module "$M4"
@@ -208,15 +208,17 @@ run_hook "$M6" APatch 0 pass post-fs-data
 run_hook "$M6" APatch 0 pass post-mount
 assert_eq "$(state "$M6" active_backend)" self 'case 6 active backend'
 
-# A failed external publication remains a failure in the selected mode.
+# A failed external publication schedules self-mount for the KernelSU mount phase.
 M14="$TMP/ksu-meta-prepare-failed"; new_module "$M14"
 rm -rf "$M14/.luoshu-payload"
-expect_hook_failure "$M14" KernelSU 1 pass post-fs-data hybrid-mount
-assert_eq "$(state "$M14" selected_backend)" external 'case 14 preserves external publication mode'
-assert_eq "$(state "$M14" active_backend)" none 'case 14 publication failure is not activation'
-[ ! -f "$M14/config/test-self-mounted" ] || fail 'case 14 ran an unselected self backend'
+run_hook "$M14" KernelSU 1 pass post-fs-data hybrid-mount
+assert_eq "$(state "$M14" selected_backend)" self 'case 14 selects self after publication failure'
+assert_eq "$(state "$M14" active_backend)" none 'case 14 waits for the KernelSU mount phase'
+assert_eq "$(state "$M14" fallback_used)" 1 'case 14 records the automatic fallback'
+[ ! -f "$M14/config/test-self-mounted" ] || fail 'case 14 mounted before the KernelSU mount phase'
 expect_hook_failure "$M14" KernelSU 1 fail post-mount hybrid-mount
-assert_eq "$(state "$M14" verification)" failed 'case 14 later failed verification stays failed'
+assert_eq "$(state "$M14" verification)" failed 'case 14 remains failed when the self payload is unavailable'
+[ ! -f "$M14/config/test-self-mounted" ] || fail 'case 14 mounted without a verified payload'
 
 # SukiSU is distinct in diagnostics but follows KSU's post-mount hook timing.
 M10="$TMP/sukisu-meta"; new_module "$M10"
@@ -226,25 +228,25 @@ assert_eq "$(state "$M10" root_manager)" 'SukiSU Ultra' 'SukiSU root identity in
 assert_eq "$(state "$M10" active_backend)" external 'SukiSU Meta backend'
 [ ! -f "$M10/config/test-self-mounted" ] || fail 'SukiSU ran self beside Meta'
 
-# External route failures remain explicit failures, without an unselected mount.
+# External route failures in automatic mode use a self-mount that must verify.
 M11="$TMP/external-route-fallback"; new_module "$M11"
 run_hook "$M11" KernelSU 1 pass post-fs-data
-expect_hook_failure "$M11" KernelSU 1 fail post-mount hybrid-mount 1
-assert_eq "$(state "$M11" selected_backend)" external 'M11 preserves the external mode'
-assert_eq "$(state "$M11" active_backend)" none 'M11 does not claim an unverified backend'
-assert_eq "$(state "$M11" verification)" failed 'M11 records route failure'
-assert_eq "$(state "$M11" fallback_used)" 0 'M11 never switches to self'
-[ ! -f "$M11/config/test-self-mounted" ] || fail 'M11 ran an unselected self backend'
+run_hook "$M11" KernelSU 1 fail post-mount hybrid-mount 1
+assert_eq "$(state "$M11" selected_backend)" self 'M11 selects self after external route failure'
+assert_eq "$(state "$M11" active_backend)" self 'M11 claims self only after route verification'
+assert_eq "$(state "$M11" verification)" passed 'M11 verifies the fallback route'
+assert_eq "$(state "$M11" fallback_used)" 1 'M11 records fallback'
+[ -f "$M11/config/test-self-mounted" ] || fail 'M11 did not try self mounting'
 
-# Hybrid Mount route failure also preserves the selected external mode.
+# Hybrid Mount route failure also tries the verified self fallback in auto mode.
 M17="$TMP/hybrid-route-fallback"; new_module "$M17"
 run_hook "$M17" KernelSU 1 pass post-fs-data hybrid-mount
-expect_hook_failure "$M17" KernelSU 1 fail post-mount hybrid-mount
-assert_eq "$(state "$M17" selected_backend)" external 'M17 preserves the external mode'
-assert_eq "$(state "$M17" active_backend)" none 'M17 does not claim an unverified backend'
-assert_eq "$(state "$M17" verification)" failed 'M17 records route failure'
-assert_eq "$(state "$M17" fallback_used)" 0 'M17 never switches to self'
-[ ! -f "$M17/config/test-self-mounted" ] || fail 'M17 ran an unselected self backend'
+run_hook "$M17" KernelSU 1 fail post-mount hybrid-mount
+assert_eq "$(state "$M17" selected_backend)" self 'M17 selects self after Hybrid route failure'
+assert_eq "$(state "$M17" active_backend)" self 'M17 claims only verified self mount'
+assert_eq "$(state "$M17" verification)" passed 'M17 verifies the self fallback'
+assert_eq "$(state "$M17" fallback_used)" 1 'M17 records fallback'
+[ -f "$M17/config/test-self-mounted" ] || fail 'M17 did not try self mounting'
 
 # An explicit self selection on an unknown manager uses the compatibility hook.
 M12="$TMP/unknown-root"; new_module "$M12"
@@ -321,12 +323,12 @@ assert_eq "$(state "$M23" active_backend)" external 'case 23 commits Magisk Meta
 
 M24="$TMP/magisk-meta-fallback"; new_module "$M24"
 run_hook "$M24" Magisk 1 pass post-fs-data hybrid-mount
-expect_hook_failure "$M24" Magisk 1 fail service hybrid-mount
-assert_eq "$(state "$M24" selected_backend)" external 'M24 preserves the external mode'
-assert_eq "$(state "$M24" active_backend)" none 'M24 does not claim an unverified backend'
-assert_eq "$(state "$M24" verification)" failed 'M24 records route failure'
-assert_eq "$(state "$M24" fallback_used)" 0 'M24 never switches to self'
-[ ! -f "$M24/config/test-self-mounted" ] || fail 'M24 ran an unselected self backend'
+run_hook "$M24" Magisk 1 fail service hybrid-mount
+assert_eq "$(state "$M24" selected_backend)" self 'M24 selects self after external route failure'
+assert_eq "$(state "$M24" active_backend)" self 'M24 claims only verified self mount'
+assert_eq "$(state "$M24" verification)" passed 'M24 verifies fallback from service'
+assert_eq "$(state "$M24" fallback_used)" 1 'M24 records automatic fallback'
+[ -f "$M24/config/test-self-mounted" ] || fail 'M24 did not try self mounting'
 
 M25="$TMP/apatch-meta"; new_module "$M25"
 run_hook "$M25" APatch 1 pass post-fs-data hybrid-mount

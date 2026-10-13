@@ -1,13 +1,14 @@
 package io.github.xgl34222220.ziyu.ui.studio
 
-import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import io.github.xgl34222220.ziyu.ui.theme.ZiyuMotionTokens
 import androidx.compose.foundation.layout.Box
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.OutlinedTextField
+import io.github.xgl34222220.ziyu.ui.design.ZiyuAlertDialog as AlertDialog
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuTextButton as TextButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuOutlinedTextField as OutlinedTextField
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -110,9 +111,11 @@ internal fun FontStudioRoute(
         showGlyphBrowser ||
         showSwitchHistory ||
         restoreNotice.isNotBlank()
+    // MIUIX uses the native child-layer depth response. COUI manages its own overlay
+    // transitions and Material preserves its platform dialog geometry.
     val pageScale by animateFloatAsState(
-        targetValue = if (childLayerActive) .96f else 1f,
-        animationSpec = spring(dampingRatio = .86f, stiffness = Spring.StiffnessMediumLow),
+        targetValue = if (style == UiStyle.MIUIX && childLayerActive) .96f else 1f,
+        animationSpec = tween(ZiyuMotionTokens.Emphasized, easing = FastOutSlowInEasing),
         label = "studioDepthScale",
     )
     Box(
@@ -124,7 +127,7 @@ internal fun FontStudioRoute(
         when (style) {
             UiStyle.MATERIAL -> FontStudioScreenMaterial(state, stableActions, studioTools)
             UiStyle.MIUIX -> FontStudioScreenMiuix(state, stableActions, studioTools)
-            UiStyle.COUI -> FontStudioScreenMiuix(state, stableActions, studioTools)
+            UiStyle.COUI -> FontStudioScreenCoui(state, stableActions, studioTools)
         }
     }
 

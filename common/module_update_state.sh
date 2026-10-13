@@ -69,7 +69,7 @@ luoshu_update_config_is_volatile() {
         composite_progress.json|mix_last_error.txt|app_install_pending|app_install_state.conf|\
         app_install_manual|font-payload-rebuild-pending.conf|font-payload-reapply-notified.conf|font-boot-failures|\
         font-payload-quarantine.conf|mount_compat.conf|self-mount.conf|\
-        self-mount-required.conf|device-font-load-verification.conf|font-ui-cache.json|\
+        self-mount-required.conf|device-font-load-verification.conf|font-ui-cache.json|provider-reload-check.conf|\
         device-font-cache-pending.conf|device-font-cache-failures.conf|\
         device-font-engine.conf|device-font-installed.conf|device-font-dynamic-mount.conf|\
         device-font-load-verification.json|device-font-manager-dump.txt|\
@@ -135,6 +135,9 @@ luoshu_update_verify_manifest() {
     _luvm_module="$1"
     _luvm_root="$2"
     _luvm_manifest="$_luvm_module/config/font-payload-manifest.conf"
+    _luvm_layout="${4:-nomount-partition-roots}"
+    case "$_luvm_layout" in nomount-partition-roots|nested-system) ;; *)
+        LUOSHU_UPDATE_FAILURE_REASON=unsupported-payload-layout; return 1 ;; esac
     [ -e "$_luvm_manifest" ] || return 0
     [ -s "$_luvm_manifest" ] || { LUOSHU_UPDATE_FAILURE_REASON=empty-payload-manifest; return 1; }
     _luvm_normalize="${3:-0}"
@@ -145,7 +148,7 @@ luoshu_update_verify_manifest() {
             LD_LIBRARY_PATH="$_luvm_pyroot/lib:$_luvm_pyroot/lib/python3.14/lib-dynload${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
             "$_luvm_pyroot/bin/luoshu-python" "$_luvm_module/common/font_update_manifest.py" \
             "$_luvm_root" "$_luvm_manifest" "$_luvm_normalize" \
-            "$(luoshu_update_payload_partitions "$_luvm_module" | tr '\n' ' ')" \
+            "$(luoshu_update_payload_partitions "$_luvm_module" | tr '\n' ' ')" "$_luvm_layout" \
             2>>"$_luvm_module/logs/module-update.log")
         _luvm_rc=$?
         if [ "$_luvm_rc" = 0 ]; then
@@ -173,16 +176,20 @@ luoshu_update_verify_manifest() {
         case " $_luvm_parts " in *" $_luvm_partition "*) ;; *)
             LUOSHU_UPDATE_FAILURE_REASON=unsupported-payload-manifest-partition; return 1 ;;
         esac
-        [ -s "$_luvm_root/$_luvm_rel" ] || {
+        _luvm_file_rel="$_luvm_rel"
+        if [ "$_luvm_layout" = nested-system ] && [ "$_luvm_partition" != system ]; then
+            _luvm_file_rel="system/$_luvm_rel"
+        fi
+        [ -s "$_luvm_root/$_luvm_file_rel" ] || {
             LUOSHU_UPDATE_FAILURE_REASON="payload-artifact-missing:$_luvm_rel"; return 1;
         }
-        _luvm_resolved=$(readlink -f "$_luvm_root/$_luvm_rel") || return 1
+        _luvm_resolved=$(readlink -f "$_luvm_root/$_luvm_file_rel") || return 1
         case "$_luvm_resolved" in "$_luvm_root_real"/*) ;; *)
             LUOSHU_UPDATE_FAILURE_REASON=unsafe-payload-artifact-link; return 1 ;; esac
         case "$_luvm_expected" in ''|*[!0-9a-fA-F]*)
             LUOSHU_UPDATE_FAILURE_REASON=invalid-payload-manifest-hash; return 1 ;;
         esac
-        _luvm_actual=$(sha256sum "$_luvm_root/$_luvm_rel" 2>/dev/null | awk '{print $1}')
+        _luvm_actual=$(sha256sum "$_luvm_root/$_luvm_file_rel" 2>/dev/null | awk '{print $1}')
         if [ "${#_luvm_expected}" -eq 64 ]; then
             [ "$_luvm_actual" = "$(printf '%s' "$_luvm_expected" | tr 'A-F' 'a-f')" ] || {
                 LUOSHU_UPDATE_FAILURE_REASON="payload-artifact-hash-mismatch:$_luvm_rel"; return 1;
@@ -192,7 +199,7 @@ luoshu_update_verify_manifest() {
             # that contract, then normalize only the staged copy for the new
             # SHA256/PID1 verifier; never rewrite the running module's ledger.
             case "$_luvm_expected:$_luvm_extra" in *[!0-9:]*|:*|*:) LUOSHU_UPDATE_FAILURE_REASON=invalid-payload-manifest-hash; return 1 ;; esac
-            _luvm_crc=$(cksum "$_luvm_root/$_luvm_rel" 2>/dev/null | awk '{print $1 "|" $2}')
+            _luvm_crc=$(cksum "$_luvm_root/$_luvm_file_rel" 2>/dev/null | awk '{print $1 "|" $2}')
             [ "$_luvm_crc" = "$_luvm_expected|$_luvm_extra" ] || {
                 LUOSHU_UPDATE_FAILURE_REASON="payload-artifact-checksum-mismatch:$_luvm_rel"; return 1;
             }
@@ -328,7 +335,8 @@ luoshu_migrate_update_cache() {
     # on every restore. Copying them preserves a hit across compatible upgrades;
     # changed identities remain a miss without modifying the active payload.
     for _relative in cache/auto-multiweight-mix/source-meta-v1 config/metrics_cache config/font-config-source \
-                     config/safe-switch-cache; do
+                     config/safe-switch-cache config/stock-font-snapshot \
+                     cache/universal-font-artifacts config/universal-font-artifact-manifests; do
         [ -d "$_old/$_relative" ] || continue
         rm -rf "$_new/$_relative" 2>/dev/null || true
         mkdir -p "${_new}/${_relative%/*}" 2>/dev/null || continue

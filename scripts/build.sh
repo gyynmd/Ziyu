@@ -11,10 +11,10 @@ SIZE_REPORT="$OUT/Ziyu-${VERSION}-size.txt"
 APP_APK="${LUOSHU_APP_APK:-}"
 ALLOW_DEBUG_APP="${LUOSHU_ALLOW_DEBUG_APP:-0}"
 EXPECTED_VERSION_CODE="$LUOSHU_APP_VERSION_CODE"
-# v1.2.20 measured 11,805,683 bytes with the full Python/FontTools runtime and offline ARM64
-# WOFF2 decoder. Keep the package bounded at 11.5 MiB; the App updater independently caps downloads
-# at 128 MiB.
-MAX_ZIP_BYTES="${LUOSHU_MAX_ZIP_BYTES:-12058624}"
+# Keep the signed and local builders within the same fixed 12 MiB budget. The three-theme
+# v1.4 candidate measures about 12.2 MB after non-runtime document pruning; preserve all font
+# dependencies and signature checks. The App updater independently caps downloads at 128 MiB.
+MAX_ZIP_BYTES="${LUOSHU_MAX_ZIP_BYTES:-12582912}"
 
 sh "$ROOT/scripts/check.sh"
 [ -n "$APP_APK" ] || {
@@ -119,6 +119,7 @@ grep -Eq '^sha256=[0-9a-f]{64}$' "$STAGE/bundled/app.prop"
 
 # Final payload gate: obsolete or WebUI paths must never return.
 for forbidden in \
+  更新日志 docs README.md \
   webroot config/active_emoji.conf config/emoji_task.conf config/emoji_reboot_required.conf \
   system/fonts/NotoColorEmoji.ttf system/fonts/NotoColorEmojiLegacy.ttf \
   common/stability.sh common/fonts_xml_template.sh common/play_font_bridge common/wechat_xweb_bridge common/volume_key.sh common/legacy_data_fonts_cleanup.sh; do
@@ -126,7 +127,7 @@ for forbidden in \
 done
 
 rm -f "$ZIP" "$ZIP.sha256" "$SIZE_REPORT"
-(cd "$STAGE" && zip -9 -r -q "$ZIP" .)
+(cd "$STAGE" && zip -X -9 -r -q "$ZIP" .)
 (cd "$OUT" && sha256sum "$ZIP_NAME" > "$ZIP_NAME.sha256")
 unzip -t "$ZIP" >/dev/null
 unzip -Z1 "$ZIP" | grep -Eq '(^|/)webroot(/|$)|(^|/)(__pycache__|emoji)(/|$)|\.pyc$|NotoColorEmoji|active_emoji|emoji_task|common/stability\.sh|fonts_xml_template|play_font_bridge\.sh|wechat_xweb_bridge\.sh' && {

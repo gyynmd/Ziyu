@@ -43,6 +43,12 @@ case "${1:-request}" in
         [ ! -e "$MODDIR/disable" ] && [ ! -e "$MODDIR/remove" ] || _sr_error '字域模块已禁用或待卸载，请先处理模块状态。'
         [ "$(getprop sys.boot_completed 2>/dev/null)" = 1 ] || _sr_error '系统仍在启动或软重启中，请等待启动完成。'
         mkdir -p "$MODDIR/logs" || _sr_error '无法创建软重启日志目录。'
+        . "$MODDIR/common/mount_provider_reload.sh" || _sr_error '软重启挂载兼容检查不可用。'
+        if ! ziyu_provider_reload_check "$MODDIR" request; then
+            printf '[%s] [SOFT-REBOOT] blocked reason=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" \
+                "${PROVIDER_RELOAD_REASON:-provider-reload-check-failed}" >> "$LOG_FILE"
+            _sr_error "${PROVIDER_RELOAD_MESSAGE:-无法确认元模块软重启兼容性，已保留待应用字体。}"
+        fi
         printf '[%s] [SOFT-REBOOT] requesting daemon=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$_sr_ksud" >> "$LOG_FILE" || _sr_error '无法写入软重启日志。'
         # Do not run emulated-soft-reboot.sh here: provider hooks must run first.
         "$_sr_ksud" soft-reboot >> "$LOG_FILE" 2>&1

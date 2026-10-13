@@ -15,11 +15,12 @@ SIZE_REPORT="$OUT/Ziyu-${LUOSHU_ARTIFACT_VERSION}-size.txt"
 APP_APK="${LUOSHU_APP_APK:-}"
 ALLOW_DEBUG_APP="${LUOSHU_ALLOW_DEBUG_APP:-0}"
 EXPECTED_VERSION_CODE="$LUOSHU_APP_VERSION_CODE"
-MAX_ZIP_BYTES="${LUOSHU_MAX_ZIP_BYTES:-12058624}"
+MAX_ZIP_BYTES="${LUOSHU_MAX_ZIP_BYTES:-12582912}"
 
 [ -s "$APP_APK" ] || { echo 'LUOSHU_APP_APK is required.' >&2; exit 65; }
 APP_PACKAGE="${LUOSHU_APP_PACKAGE:-}"
 APP_VERSION_CODE="${LUOSHU_APP_VERSION_CODE:-}"
+APP_VERSION_NAME="${LUOSHU_APP_VERSION_NAME:-${LUOSHU_VERSION#v}-debug}"
 case "$APP_PACKAGE" in
   io.github.shishui611_art.ziyu) ;;
   io.github.shishui611_art.ziyu.debug)
@@ -47,7 +48,7 @@ APP_SHA256=$(sha256sum "$STAGE/bundled/Ziyu-App.apk" | awk '{print $1}')
 {
   printf 'package=%s\n' "$APP_PACKAGE"
   printf 'versionCode=%s\n' "$APP_VERSION_CODE"
-  printf 'versionName=%s\n' "$LUOSHU_VERSION"
+  printf 'versionName=%s\n' "$APP_VERSION_NAME"
   printf 'sha256=%s\n' "$APP_SHA256"
 } > "$STAGE/bundled/app.prop"
 chmod 0644 "$STAGE/bundled/Ziyu-App.apk" "$STAGE/bundled/app.prop"
@@ -83,6 +84,7 @@ grep -qx "versionCode=$EXPECTED_VERSION_CODE" "$STAGE/bundled/app.prop"
 grep -Eq '^sha256=[0-9a-f]{64}$' "$STAGE/bundled/app.prop"
 
 for forbidden in \
+  更新日志 docs README.md \
   webroot config/active_emoji.conf config/emoji_task.conf config/emoji_reboot_required.conf \
   system/fonts/NotoColorEmoji.ttf system/fonts/NotoColorEmojiLegacy.ttf \
   common/stability.sh common/fonts_xml_template.sh common/play_font_bridge common/wechat_xweb_bridge common/volume_key.sh common/legacy_data_fonts_cleanup.sh; do

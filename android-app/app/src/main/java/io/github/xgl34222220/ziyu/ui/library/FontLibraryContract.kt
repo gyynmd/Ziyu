@@ -25,6 +25,8 @@ internal enum class FontLibrarySort(val label: String) {
 internal data class FontLibraryUiState(
     val loading: Boolean = false,
     val operationBusy: Boolean = false,
+    val deletionInProgress: Boolean = false,
+    val pendingDeletionIds: Set<String> = emptySet(),
     val query: String = "",
     val error: String = "",
     val operationMessage: String = "",
@@ -104,17 +106,21 @@ internal fun FontLibraryUiState.forDisplay(
 }
 
 internal fun ZiyuViewModel.toFontLibraryUiState(): FontLibraryUiState {
-    val allFonts = fonts
-    val visibleFonts = filteredFonts
+    val allFonts = fonts.filterNot { it.id in pendingFontDeletionIds }
+    val visibleFonts = filteredFonts.filterNot { it.id in pendingFontDeletionIds }
+    val deletionNotice = fontTaskNotification?.takeIf { it.kind == "delete" && it.message == operationMessage }
     val failedSwitchMessage = snapshot.taskMessage.takeIf {
         snapshot.taskType == "switch" && snapshot.taskState == "failed" && it.isNotBlank()
     }.orEmpty()
     return FontLibraryUiState(
         loading = fontLoading || fontRefreshing,
         operationBusy = operationBusy || mixState.busy,
+        deletionInProgress = fontDeletionInProgress,
+        pendingDeletionIds = pendingFontDeletionIds,
         query = searchQuery,
-        error = fontError.ifBlank { failedSwitchMessage },
-        operationMessage = if (failedSwitchMessage.isBlank()) operationMessage else "",
+        error = deletionNotice?.takeIf { it.state == "failed" }?.message
+            ?: fontError.ifBlank { failedSwitchMessage },
+        operationMessage = if (!fontDeletionInProgress && deletionNotice == null && failedSwitchMessage.isBlank()) operationMessage else "",
         activeFontId = snapshot.activeFont,
         fonts = visibleFonts,
         allFonts = allFonts,

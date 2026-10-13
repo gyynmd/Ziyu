@@ -406,6 +406,25 @@ _luoshu_meta_hybrid_runtime_api() {
     printf '%s\n' "$_lmhr_status" | grep -q '"modules"[[:space:]]*:[[:space:]]*\['
 }
 
+luoshu_nomount_kernel_probe() {
+    # Only query the API. Loading the driver belongs to the manager's metamount hook.
+    NOMOUNT_KERNEL_USABLE=0
+    META_NOMOUNT_VERSION=''
+    [ -x "$1" ] || return 1
+    if command -v timeout >/dev/null 2>&1; then
+        META_NOMOUNT_VERSION=$(timeout 2 "$1" version 2>/dev/null)
+    else
+        META_NOMOUNT_VERSION=$("$1" version 2>/dev/null)
+    fi
+    _lmd_nm_probe_rc=$?
+    if [ "$_lmd_nm_probe_rc" -eq 0 ] && [ -n "$META_NOMOUNT_VERSION" ]; then
+        NOMOUNT_KERNEL_USABLE=1
+        return 0
+    fi
+    META_NOMOUNT_VERSION=''
+    return 1
+}
+
 luoshu_meta_mount_detect() {
     META_ENGINE=none
     META_INSTALLED=0
@@ -419,7 +438,7 @@ luoshu_meta_mount_detect() {
     META_ACTIVE_DIR=''
     META_USABLE_REASON='not-installed'
     META_CLEANUP_CAPABILITY='none'
-    NOMOUNT_KERNEL_USABLE=0
+    NOMOUNT_KERNEL_USABLE=unknown
     META_NOMOUNT_CLI=''
     META_NOMOUNT_VERSION=''
     META_DETECTION_SOURCE=filesystem
@@ -635,10 +654,7 @@ luoshu_meta_mount_detect() {
                         META_USABLE_REASON=nomount-provider-hook-unavailable
                     fi
                 else
-                    META_NOMOUNT_VERSION=$("$META_NOMOUNT_CLI" version 2>/dev/null)
-                    _lmd_nm_version_rc=$?
-                    if [ "$_lmd_nm_version_rc" -eq 0 ] && [ -n "$META_NOMOUNT_VERSION" ]; then
-                        NOMOUNT_KERNEL_USABLE=1
+                    if luoshu_nomount_kernel_probe "$META_NOMOUNT_CLI"; then
                         META_READY=1
                         # The VFS interface is live, but this private-payload
                         # backend is intentionally separate from Meta selection.

@@ -11,6 +11,18 @@
 - 字域适配：保留当前组合保存与应用流程、字形兼容和错误报告；微调接入三种界面风格、方案备份及任务参数；实例缓存沿用字域实现并补充同源英数复用。
 - 许可证：GPL-3.0-only。上游此标签的许可证文本保存在 [`licenses/LuoShu-v3.0.0-GPL-3.0.txt`](licenses/LuoShu-v3.0.0-GPL-3.0.txt)。完整范围和当前验证状态见 [`docs/UPSTREAM_V3_PORT.md`](docs/UPSTREAM_V3_PORT.md)。
 
+## 挂载协议参考
+
+`common/device_font_template_base.py` 的按需 PostScript 名称索引及字体表懒加载移植自 LuoShu 提交 [`852297117606ca37436b999b6307fd598742bca7`](https://github.com/xgl34222220-ops/LuoShu/commit/852297117606ca37436b999b6307fd598742bca7)，保持 GPL-3.0-only；许可证完整文本沿用 `licenses/LuoShu-v3.0.0-GPL-3.0.txt`。它仅改变采集读取时机，原有解析、哈希和验证流程保留。
+
+`common/font_structure.py` 中 v1.3.12 新增的 SFNT/TTC 目录读取及 `common/font_check.sh` 的组合源接入为字域自行编写的 GPL-3.0-only 代码，使用 Python 标准库，未引入第三方解析代码。FontTools 的既有完整验证仍按其原许可证使用。
+
+新增 `common/mount_provider_reload.sh` 是字域自行编写的 GPL-3.0-only 代码，依据安装版本的可读证据检查软重启兼容性。协议参考 [Mountify 扫描脚本](https://github.com/backslashxx/mountify/blob/master/module/post-fs-data.sh)（Unlicense）和 [KernelSU v3.3.0 阶段执行逻辑](https://github.com/tiann/KernelSU/blob/v3.3.0/userspace/ksud/src/init_event.rs)；未引入或执行上述项目的第三方脚本副本。
+
+## 原创状态读取代码
+
+`common/mount_backend_state.sh` 为字域自行编写的状态读取辅助代码，按仓库 GPL-3.0-only 授权，完整许可证为根目录 `LICENSE`；未引入第三方状态解析实现。
+
 ## CPython
 
 - 用途：在 Android ARM64 设备上运行离线复合字体构建器。
@@ -62,6 +74,8 @@
 字域调整了包名、主题和系统版本能力检测，并将组件接入现有字体管理页面。`liquid/` 子目录中的折射与背景辅助代码仍按各文件标注，基于 Miuix 与 AndroidLiquidGlass 示例并采用 Apache License 2.0。
 
 ## 用户字体与第三方模块
+
+v1.3.3 新增的 `common/font_scan_profile.py` 和 `common/stock_font_snapshot.py` 为本项目原创运行代码，按仓库 GPL-3.0-only 授权，未复制第三方模块实现。快照只在用户设备上保存该设备已验证的原厂文件，不随模块 ZIP 分发。
 
 字域不会在仓库或发布包中附带商业字体。以下内容不受字域 GPL-3.0-only 授权：
 

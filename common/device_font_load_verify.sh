@@ -41,6 +41,7 @@ _dfload_write_simple() {
         printf 'activeFont=%s\n' "$_dfload_active"
         printf 'reason=%s\n' "$_dfload_reason"
         printf 'bootId=%s\n' "$(_dfload_boot_id)"
+        printf 'payloadManifestSha256=%s\n' "$(sha256sum "$_dfload_module_dir/config/font-payload-manifest.conf" 2>/dev/null | awk '{print $1}')"
         printf 'time=%s\n' "$(date +%s 2>/dev/null || echo 0)"
     } > "${_dfload_conf}.tmp.$$" 2>/dev/null || return 1
     mv -f "${_dfload_conf}.tmp.$$" "$_dfload_conf" 2>/dev/null || return 1
@@ -50,6 +51,7 @@ _dfload_write_simple() {
 
 _dfload_active_font() {
     _dfload_module_dir="$(_dfload_module)"
+    if type ziyu_current_payload_font >/dev/null 2>&1; then ziyu_current_payload_font "$_dfload_module_dir"; return $?; fi
     if type ziyu_live_font >/dev/null 2>&1; then ziyu_live_font && return 0; fi
     _dfload_active=$(head -n1 "$_dfload_module_dir/config/active_font.conf" 2>/dev/null | tr -d '\r\n')
     [ -n "$_dfload_active" ] || _dfload_active=default
@@ -89,6 +91,7 @@ _dfload_backend_route_verify() {
             --visible-root "${LUOSHU_FONT_VERIFY_VISIBLE_ROOT:-/proc/1/root}" \
             --mountinfo "${LUOSHU_FONT_VERIFY_MOUNTINFO:-/proc/1/mountinfo}" \
             --mode "$_dfload_route_mode" --output "$_dfload_route_module/config/device-font-load-route-verification.json" \
+            --active-font "$(_dfload_active_font)" \
             >> "$_dfload_route_module/logs/device-font-load-verify.log" 2>&1
     else
         _dfload_route_pyroot="$_dfload_route_module/common/python"
@@ -100,6 +103,7 @@ _dfload_backend_route_verify() {
             --visible-root "${LUOSHU_FONT_VERIFY_VISIBLE_ROOT:-/proc/1/root}" \
             --mountinfo "${LUOSHU_FONT_VERIFY_MOUNTINFO:-/proc/1/mountinfo}" \
             --mode "$_dfload_route_mode" --output "$_dfload_route_module/config/device-font-load-route-verification.json" \
+            --active-font "$(_dfload_active_font)" \
             >> "$_dfload_route_module/logs/device-font-load-verify.log" 2>&1
     fi
 }
@@ -171,7 +175,9 @@ _dfload_backend_authority() {
         # An App status query is intentionally cheap. Reuse only the same boot
         # and same font's deep readback, never promote backend metadata alone.
         _dfload_authority_cached="$(_dfload_module)/config/device-font-load-verification.conf"
+        _dfload_manifest_sha=$(sha256sum "$(_dfload_module)/config/font-payload-manifest.conf" 2>/dev/null | awk '{print $1}')
         if [ "$(_dfload_state_value "$_dfload_authority_cached" bootId)" = "$_dfload_authority_current" ] && \
+           [ "$(_dfload_state_value "$_dfload_authority_cached" payloadManifestSha256)" = "$_dfload_manifest_sha" ] && \
            [ "$(_dfload_state_value "$_dfload_authority_cached" activeFont)" = "$(_dfload_active_font)" ]; then
             case "$(_dfload_state_value "$_dfload_authority_cached" state):$(_dfload_state_value "$_dfload_authority_cached" reason)" in
                 "verified:backend-pid1-route-verified:$_dfload_authority_backend") return 0 ;;

@@ -1,5 +1,16 @@
 LuoShu bundles or builds with the following third-party components:
 
+Lazy template indexing/table reads in common/device_font_template_base.py are
+adapted from LuoShu commit 852297117606ca37436b999b6307fd598742bca7,
+GPL-3.0-only; full license: licenses/LuoShu-v3.0.0-GPL-3.0.txt.
+
+The v1.3.12 SFNT/TTC table-directory reader in common/font_structure.py and its
+mix-source integration are original Ziyu code, GPL-3.0-only under LICENSE,
+using Python standard libraries without third-party parser code.
+
+Project-owned common/mount_backend_state.sh is original Ziyu runtime code,
+licensed GPL-3.0-only under the repository LICENSE. It includes no third-party parser.
+
 1. CPython Android ARM64 runtime
    License: Python Software Foundation License and historical license terms
    Full text: licenses/CPython-LICENSE.txt

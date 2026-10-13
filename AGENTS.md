@@ -18,6 +18,10 @@
 
 ## 实现约束
 
+- 修复必须针对实际故障原因和执行路径。新增错误提示、诊断字段或提前拦截只能作为辅助，不能代替实际问题的修复，也不能据此声称已修好。交付时说明实际改正的行为、仍存在的限制和未完成的设备验证。
+- 修复同时关注现有功能兼容、资源消耗和切换字体速度；优先减少重复复制、重复哈希及无必要等待，保留安全契约。性能改善只能依据同条件实测报告，不能从编译通过直接推断。
+- 挂载提供者适配只允许在用户请求的管理器重载阶段执行；逐项证明提供者身份、挂载来源、命名空间和清理结果。不得在普通状态读取或路由校验失败时全局卸载。提供者原生重载流程仍由管理器调度。
+
 - 模块 Shell 需兼容 Android `/system/bin/sh` 和设备自带 BusyBox/Toybox，不能假设桌面 GNU 工具齐备。
 - Root 命令应校验输入与路径，记录事务状态，并在失败时验证回滚结果。
 - 字体只写入字域管理的 systemless 负载；不得直接修改只读系统分区或覆盖整份原厂字体 XML。
@@ -29,5 +33,7 @@
 ## 开发环境
 
 - Android 构建使用 JDK 17、Android SDK API 37 与 Gradle 9.5。
+- 本机 JDK 17 为 `E:\Android\openjdk\jdk-17.0.8.101-hotspot`；SDK 为 `F:\Program Files\AndroidSDK`。Gradle 9.5 位于用户 Gradle wrapper 缓存，本副本没有 `gradlew.bat`，用缓存中的 `gradle.bat -p android-app` 构建。
+- 本机 Python 使用 Conda 环境 `F:\ProgramData\anaconda3\envs\env\python.exe`。本地打包用 Git Bash 和 `scripts/build_debug_fast.sh`，不运行完整测试脚本；独立包与 ZIP 内 APK 完整性仍必须检查。
 - 模块包构建需提供与仓库脚本相符的 Python/ARM64 字体运行时环境；新增运行文件必须进入 `scripts/module_payload_manifest.txt`。
 - 正式签名只经受控环境变量提供；不要把密钥、密码、解密材料、本机凭据路径或设备诊断导出提交到仓库。

@@ -10,7 +10,9 @@ import sys
 from font_digest_cache import FontDigestCache, file_identity
 
 
-def verify(root, manifest, normalize, partitions):
+def verify(root, manifest, normalize, partitions, layout='nomount-partition-roots'):
+    if layout not in ('nomount-partition-roots', 'nested-system'):
+        raise ValueError('unsupported-payload-layout')
     root, manifest = Path(root).resolve(strict=True), Path(manifest)
     original = manifest.read_bytes()
     digests, checksums, observed, normalized = FontDigestCache(), {}, [], []
@@ -31,7 +33,10 @@ def verify(root, manifest, normalize, partitions):
         if relative in seen:
             raise ValueError('duplicate-payload-manifest-path')
         seen.add(relative)
-        path = root / relative
+        published = ('system/' + relative
+                     if layout == 'nested-system' and components[0] != 'system'
+                     else relative)
+        path = root / published
         try:
             resolved = path.resolve(strict=True)
             resolved.relative_to(root)
@@ -93,7 +98,8 @@ def verify(root, manifest, normalize, partitions):
 
 if __name__ == '__main__':
     try:
-        result = verify(sys.argv[1], sys.argv[2], sys.argv[3] == '1', set(sys.argv[4].split()))
+        result = verify(sys.argv[1], sys.argv[2], sys.argv[3] == '1', set(sys.argv[4].split()),
+                        sys.argv[5] if len(sys.argv) > 5 else 'nomount-partition-roots')
         print(json.dumps(result, ensure_ascii=False))
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print('update-manifest-rejected:' + str(error).replace('\r', ' ').replace('\n', ' '))

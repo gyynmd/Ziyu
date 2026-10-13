@@ -4,10 +4,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider as MaterialSlider
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSlider as Slider
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,6 +26,7 @@ import io.github.xgl34222220.ziyu.MIX_LATIN_OFFSET_LIMIT
 import io.github.xgl34222220.ziyu.MIX_LATIN_SIZE_LIMIT
 import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
 import io.github.xgl34222220.ziyu.ui.theme.LocalUiStyle
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuCard
 import io.github.suqi8.coui.kmp.basic.Slider as CouiSlider
 import top.yukonga.miuix.kmp.basic.Slider as MiuixSlider
@@ -35,7 +37,14 @@ import kotlin.math.roundToInt
 internal fun StudioLatinTuneControls(state: FontStudioUiState, actions: FontStudioActions) {
     val idle = !state.loading && !state.busy && !state.operationBusy
     val enabled = idle && state.manualTuneSupported
-    ZiyuCard(modifier = Modifier.fillMaxWidth()) {
+    val palette = LocalZiyuPaletteTokens.current
+    ZiyuCard(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = palette.cardBackground,
+            contentColor = palette.textPrimary,
+        ),
+    ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("英数微调", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
@@ -96,7 +105,7 @@ private fun LatinTuneSlider(
         }
     }
     when (LocalUiStyle.current) {
-        UiStyle.MATERIAL -> MaterialSlider(
+        UiStyle.MATERIAL -> Slider(
             value = draft.toFloat(),
             onValueChange = onDraftChange,
             onValueChangeFinished = onFinished,

@@ -165,7 +165,7 @@ internal fun ZiyuViewModel.toLogsUiState(): LogsUiState {
             )
         }
 
-        if (operationBusy && snapshot.taskType != "switch") {
+        if (operationBusy && (fontDeletionInProgress || snapshot.taskType != "switch")) {
             val kind = taskKindFor(operationMessage)
             add(
                 TaskCenterItem(

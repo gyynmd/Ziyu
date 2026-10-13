@@ -79,13 +79,6 @@ _ufc_compile() {
 
     _uc_manifest=$(_ufc_manifest "$_uc_family") || return 1
     _uc_output=$(_ufc_output_dir "$_uc_family") || return 1
-    rm -rf "$_uc_output" 2>/dev/null || true
-    rm -f "$_uc_manifest" 2>/dev/null || true
-    mkdir -p "$_uc_output" "$MANIFEST_DIR" 2>/dev/null || {
-        printf '{"status":"error","message":"无法创建字体编译缓存"}\n'
-        return 1
-    }
-
     set -- "$COMPILER" \
         --font-plan "$_uc_font_plan" \
         --route-plan "$_uc_route_plan" \
@@ -97,6 +90,23 @@ _ufc_compile() {
     if [ "${LUOSHU_COMPILER_ALLOW_LIVE_STOCK:-0}" = 1 ]; then
         set -- "$@" --allow-live-stock
     fi
+    [ ! -L "$_uc_output" ] && [ ! -L "$_uc_manifest" ] || {
+        printf '{"status":"error","message":"编译缓存路径包含外部链接"}\n'; return 1;
+    }
+    if [ -s "$_uc_manifest" ] && [ -d "$_uc_output" ]; then
+        _uc_reused=$(_ufc_exec "$@" --reuse-only 2>/dev/null)
+        if [ "$?" -eq 0 ]; then
+            mkdir -p "$MODDIR/logs" 2>/dev/null || true
+            printf '[UNIVERSAL-CACHE] verified reuse font=%s\n' "$_uc_family" >> "$MODDIR/logs/fontswitch.log" 2>/dev/null || true
+            printf '%s\n' "$_uc_reused"
+            return 0
+        fi
+    fi
+    rm -rf "$_uc_output" 2>/dev/null || return 1
+    rm -f "$_uc_manifest" 2>/dev/null || return 1
+    mkdir -p "$_uc_output" "$MANIFEST_DIR" 2>/dev/null || {
+        printf '{"status":"error","message":"无法创建字体编译缓存"}\n'; return 1;
+    }
     _ufc_exec "$@"
 }
 

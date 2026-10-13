@@ -25,6 +25,10 @@ _soft_fail() {
     exit 1
 }
 
+# The provider's hook has already run. A copied/global overlay does not contain
+# MODDIR in mountinfo, so the module-source check below cannot detect stale fonts.
+. "$MODDIR/common/mount_provider_reload.sh" || _soft_fail 'provider-reload-check-unavailable'
+
 _soft_module_mount_remains() {
     [ -r /proc/1/mountinfo ] || return 0
     _soft_module_relative="${MODDIR#/data}"
@@ -68,6 +72,11 @@ if { [ "$_state_boot" = "$_boot" ] && [ "$_backend" = self ]; } || \
     export LUOSHU_SELF_ALLOW_LAZY_UMOUNT
     _lbr_rollback_self_attempt || _soft_fail 'self-mount-cleanup-failed'
 fi
+
+# Retire our mounts before validating provider ownership: a Ziyu-owned child
+# mount must not be mistaken for an unrelated module's mount above Mountify.
+ziyu_provider_reload_check "$MODDIR" reload || \
+    _soft_fail "${PROVIDER_RELOAD_REASON:-provider-reload-cleanup-unconfirmed}"
 
 # A mounted module source cannot be renamed while Android is still using it.
 if _soft_module_mount_remains; then

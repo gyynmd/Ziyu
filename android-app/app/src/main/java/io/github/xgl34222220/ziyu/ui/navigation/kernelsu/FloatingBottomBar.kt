@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -66,6 +65,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import io.github.xgl34222220.ziyu.ui.design.LocalZiyuContentColor
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.lerp
 import kotlinx.coroutines.launch
@@ -214,15 +214,20 @@ fun FloatingBottomBar(
     backdrop: Backdrop,
     tabsCount: Int,
     isBlurEnabled: Boolean = true,
+    isGlassEnabled: Boolean = true,
     content: @Composable RowScope.((Int) -> Unit) -> Unit
 ) {
     val isInDark = MaterialTheme.colorScheme.background.luminance() < .5f
-    val renderLiquidGlass = isBlurEnabled && Build.VERSION.SDK_INT >= 33 && isRuntimeShaderSupported()
+    val renderLiquidGlass = isGlassEnabled && Build.VERSION.SDK_INT >= 33 && isRuntimeShaderSupported()
     val pillShape = remember { CircleShape }
     val accentColor = MaterialTheme.colorScheme.primary
     val tabContentColor = MaterialTheme.colorScheme.onSurface
     val surfaceContainer = MaterialTheme.colorScheme.surfaceContainer
-    val containerColor = if (renderLiquidGlass) surfaceContainer.copy(0.4f) else surfaceContainer
+    val containerColor = if (renderLiquidGlass) {
+        surfaceContainer.copy(if (isBlurEnabled) 0.4f else 0.86f)
+    } else {
+        surfaceContainer
+    }
 
     val tabsBackdrop = rememberLayerBackdrop()
     val density = LocalDensity.current
@@ -359,6 +364,9 @@ fun FloatingBottomBar(
                         alpha = if (isInDark) 0.2f else 0.1f,
                     ),
                 )
+                // Keep the liquid-glass surface fill inside the same pill shape as
+                // the backdrop; otherwise the draw callback can show as an inner rect.
+                .clip(pillShape)
                 .then(
                     if (renderLiquidGlass) {
                         Modifier.drawBackdrop(
@@ -367,7 +375,7 @@ fun FloatingBottomBar(
                             effects = {
                                 padding = maxOf(padding, 40.dp.toPx())
                                 vibrancy()
-                                blur(4.dp.toPx(), 4.dp.toPx())
+                                if (isBlurEnabled) blur(4.dp.toPx(), 4.dp.toPx())
                                 lens(
                                     refractionHeight = 24.dp.toPx(),
                                     refractionAmount = 24.dp.toPx(),
@@ -396,7 +404,7 @@ fun FloatingBottomBar(
                 .padding(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CompositionLocalProvider(LocalContentColor provides tabContentColor) {
+            CompositionLocalProvider(LocalZiyuContentColor provides tabContentColor) {
                 content(::activateTab)
             }
         }
@@ -406,7 +414,7 @@ fun FloatingBottomBar(
                 LocalFloatingBottomBarTabScale provides {
                     lerp(1f, 1.2f, dampedDragAnimation.pressProgress)
                 },
-                LocalContentColor provides accentColor,
+                LocalZiyuContentColor provides accentColor,
             ) {
                 Row(
                     Modifier
@@ -419,7 +427,7 @@ fun FloatingBottomBar(
                             shape = { pillShape },
                             effects = {
                                 vibrancy()
-                                blur(4.dp.toPx(), 4.dp.toPx())
+                                if (isBlurEnabled) blur(4.dp.toPx(), 4.dp.toPx())
                                 lens(
                                     refractionHeight = 24.dp.toPx(),
                                     refractionAmount = 24.dp.toPx(),
@@ -499,7 +507,7 @@ fun FloatingBottomBar(
                         .width(tabWidthDp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
-                    CompositionLocalProvider(LocalContentColor provides accentColor) {
+                    CompositionLocalProvider(LocalZiyuContentColor provides accentColor) {
                         Row(
                             Modifier
                                 .clearAndSetSemantics {}

@@ -74,9 +74,12 @@ case "$1" in get) cat "$VALUE";; put) printf '%s\n' "$4" > "$VALUE";; delete) pr
         self.assertIn('font_weight_runtime.sh" service', (ROOT/'service.sh').read_text())
     def test_global_weight_controls_have_been_removed(self):
         base=ROOT/'android-app/app/src/main/java/io/github/xgl34222220/ziyu'
-        self.assertNotIn('HomeGlobalWeightCard', (base/'ui/home/HomeScreenCompact.kt').read_text())
-        self.assertNotIn('refreshSystemWeight', (base/'ZiyuAppShell.kt').read_text())
-        self.assertNotIn('previewSystemWeight', (base/'Alpha15FeatureViewModel.kt').read_text())
+        sources=sorted(base.rglob('*.kt'))
+        self.assertTrue(sources, 'current Ziyu Kotlin sources must be present')
+        current_source='\n'.join(path.read_text(encoding='utf-8') for path in sources)
+        for retired_control in ('HomeGlobalWeightCard', 'refreshSystemWeight', 'previewSystemWeight'):
+            with self.subTest(retired_control=retired_control):
+                self.assertNotIn(retired_control, current_source)
 
     def test_installer_static_phases_no_fake_percent_or_background_jobs(self):
         s=(ROOT/'common/install_ui.sh').read_text();self.assertNotIn('sleep ',s)

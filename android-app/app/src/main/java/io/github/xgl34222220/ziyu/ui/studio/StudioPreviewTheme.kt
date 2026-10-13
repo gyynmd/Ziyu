@@ -7,8 +7,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -18,8 +18,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
-import io.github.xgl34222220.ziyu.ui.theme.MiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
+import io.github.xgl34222220.ziyu.ui.theme.ZiyuPaletteTokens
 
 @Composable
 internal fun StudioPreviewTheme(
@@ -50,7 +50,7 @@ internal fun StudioPreviewTheme(
         )
     }
     val tokens = remember(scheme, dark) {
-        MiuixTokens(
+        ZiyuPaletteTokens(
             pageBackground = scheme.background,
             cardBackground = scheme.surfaceContainerLowest,
             elevatedCardBackground = scheme.surfaceContainerHigh,
@@ -63,7 +63,7 @@ internal fun StudioPreviewTheme(
         )
     }
     MaterialTheme(colorScheme = scheme, shapes = shapes, typography = typography) {
-        CompositionLocalProvider(LocalMiuixTokens provides tokens, LocalContentColor provides scheme.onSurface, content = content)
+        CompositionLocalProvider(LocalZiyuPaletteTokens provides tokens, LocalContentColor provides scheme.onSurface, content = content)
     }
 }
 

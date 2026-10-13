@@ -8,19 +8,22 @@ path probe even when the current boot still has an older font overlay mounted.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Iterable
+from functools import lru_cache
 
 import font_inventory as base
 import device_font_template as template
+import font_scan_profile as scan_profile
 from hyperos_physical_policy import (PARTITIONS as HYPEROS_PARTITIONS, stock_physical_font_name,
                                     DYNAMIC_OVERLAY_PATH, DYNAMIC_OVERLAY_TARGET)
 
-SCANNER_REVISION = 8
+SCANNER_REVISION = 9
 CANDIDATE_SCHEMA = "device-font-candidates-v1"
 XML_GRAPH_SCHEMA = "device-font-xml-graph-v1"
 METRICS_REVISION = 3
@@ -122,12 +125,13 @@ def _discover_xml_sources(etc_roots: Iterable[tuple[str, Path, Path]]) -> list[t
     for partition, logical_root, actual_root in etc_roots:
         if not actual_root.is_dir():
             continue
-        for pattern in XML_PATTERNS:
-            for actual in actual_root.glob(pattern):
-                if not actual.is_file():
-                    continue
-                logical = logical_root / actual.relative_to(actual_root)
-                discovered[str(logical)] = (partition, logical, actual)
+        for actual in scan_profile.xml_files(actual_root):
+            if not actual.is_file():
+                continue
+            logical = logical_root / actual.relative_to(actual_root)
+            discovered[str(logical)] = (partition, logical, actual)
+    if len(discovered) > 256:
+        raise base.InventoryError('字体 XML 超过 256 项，拒绝保存不完整的原厂清单')
     return [discovered[key] for key in sorted(discovered)]
 
 def _merge_families(target: dict[str, list[str]], source: dict[str, list[str]]) -> None:
@@ -430,10 +434,71 @@ def _probe_font_roots(args: Any) -> list[base.FontRoot]:
     for partition, logical, aliases, _etc_logical, _etc_aliases in _dynamic_partition_specs():
         actual = next((candidate for candidate in (logical, *aliases) if candidate.is_dir()), logical)
         roots.append(base.FontRoot(partition, logical, actual))
+    for partition, logical in scan_profile.extra_roots(_property_rom_kind(), KNOWN_PARTITIONS):
+        # Discovery evidence only: OEM directories outside the runtime's allowed
+        # physical roots must not silently become deployable targets.
+        if logical.name == 'fonts' and logical.is_dir():
+            roots.append(base.FontRoot(partition, logical, logical))
     return roots
 
 
-def _write_live_candidate_probe(args: Any, output: Path) -> dict[str, Any]:
+def _probe_directory_identity(path: Path):
+    try:
+        link, target = path.lstat(), path.stat()
+        return [link.st_dev, link.st_ino, link.st_mtime_ns, link.st_ctime_ns, link.st_mode,
+                target.st_dev, target.st_ino, target.st_mtime_ns, target.st_ctime_ns, target.st_mode]
+    except FileNotFoundError:
+        return ['missing']
+    except OSError as error:
+        return ['unreadable', error.errno]
+
+
+def _probe_context(args: Any, build_key: str):
+    read = lambda path: Path(path).read_text(encoding='utf-8', errors='replace')
+    try:
+        mounts = read('/proc/self/mountinfo')
+        boot = read('/proc/sys/kernel/random/boot_id').strip()
+        security = read('/proc/self/attr/current').strip()
+        module = args.overlay_module or args.output.parent.parent
+        backend_path = module / 'config/mount-backend.conf'
+        backend = backend_path.read_text(encoding='utf-8') if backend_path.is_file() else ''
+    except OSError:
+        return None  # Never reuse path discovery without namespace evidence.
+    if 'nomount' in backend.lower():
+        return None  # VFS rule changes are not proved by a traditional mount table.
+    return {
+        'revision': 1, 'buildKey': build_key, 'bootId': boot,
+        'mounts': hashlib.sha256(mounts.encode()).hexdigest(), 'securityContext': security,
+        'uid': getattr(os, 'geteuid', lambda: -1)(),
+        'backend': hashlib.sha256(backend.encode()).hexdigest(),
+        'namePolicy': [list(base.GENERIC_DENY_FILE_TOKENS), list(base.GENERIC_DENY_STYLE_TOKENS),
+                       sorted(base.FONT_EXTENSIONS)],
+        'roots': [[r.partition, str(r.logical), str(r.actual), _probe_directory_identity(r.actual)]
+                  for r in sorted(_probe_font_roots(args), key=lambda r: (str(r.logical), str(r.actual)))],
+    }
+
+
+def _reuse_live_candidate_probe(args: Any, output: Path, build_key: str):
+    data = base._load_json(output)
+    if not data or data.get('schema') != CANDIDATE_SCHEMA or data.get('probeRevision') != 1:
+        return None
+    context = _probe_context(args, build_key)
+    if context is None or context != data.get('probeContext'):
+        return None
+    directories = data.get('probeDirectories')
+    if not isinstance(directories, list) or not directories or len(directories) > 8192:
+        return None
+    for item in directories:
+        if (not isinstance(item, list) or len(item) != 2 or not isinstance(item[0], str)
+                or _probe_directory_identity(Path(item[0])) != item[1]):
+            return None
+    # A second namespace/root read catches a concurrent provider reload.
+    if context != _probe_context(args, build_key):
+        return None
+    return data
+
+
+def _write_live_candidate_probe(args: Any, output: Path, build_key: str = '') -> dict[str, Any]:
     """Persist every visible font path before trusted stock metric resolution.
 
     A Root manager's merged view still exposes the device's physical filenames even
@@ -442,12 +507,35 @@ def _write_live_candidate_probe(args: Any, output: Path) -> dict[str, Any]:
     UI text slots and attaches stock metrics.
     """
     entries: dict[str, dict[str, Any]] = {}
+    context = _probe_context(args, build_key)
+    directories = {}
+    cacheable = context is not None
     for root in _probe_font_roots(args):
         if not root.actual.is_dir():
             continue
         try:
-            paths = sorted(root.actual.rglob("*"), key=lambda item: str(item).lower())
+            paths = []
+            pending = [root.actual]
+            while pending:
+                directory = pending.pop()
+                before = _probe_directory_identity(directory)
+                directories[str(directory)] = before
+                if len(directories) > 8192:
+                    raise base.InventoryError('字体候选目录数量超过 8192 项')
+                with os.scandir(directory) as children:
+                    for child in children:
+                        path = Path(child.path)
+                        if child.is_dir(follow_symlinks=False):
+                            pending.append(path)
+                        elif path.suffix.lower() in base.FONT_EXTENSIONS:
+                            paths.append(path)
+                            if len(paths) > 8192:
+                                raise base.InventoryError('单个目录树的字体候选数量超过 8192 项')
+                if before != _probe_directory_identity(directory):
+                    cacheable = False
+            paths.sort(key=lambda item: str(item).lower())
         except OSError:
+            cacheable = False
             continue
         for actual in paths:
             if actual.suffix.lower() not in base.FONT_EXTENSIONS:
@@ -471,11 +559,18 @@ def _write_live_candidate_probe(args: Any, output: Path) -> dict[str, Any]:
             }
     payload = {
         "schema": CANDIDATE_SCHEMA,
+        "probeRevision": 1,
+        "probeContext": context if cacheable else None,
+        "probeDirectories": [[path, value] for path, value in sorted(directories.items())] if cacheable else [],
         "generatedAt": int(time.time()),
         "fontFileCount": len(entries),
         "candidateCount": sum(1 for entry in entries.values() if entry["candidate"]),
         "paths": [entries[path] for path in sorted(entries)],
     }
+    if (cacheable and (context != _probe_context(args, build_key)
+            or any(_probe_directory_identity(Path(path)) != value for path, value in directories.items()))):
+        payload['probeContext'] = None
+        payload['probeDirectories'] = []
     base._atomic_write(output, payload)
     return payload
 
@@ -532,6 +627,9 @@ def _resolve_etc_roots(args: Any, overlay_risk: bool) -> list[tuple[str, Path, P
         roots.append((partition, logical, _resolve_actual(logical, getattr(args, argument), (), overlay_risk)))
     for partition, _font_logical, _font_aliases, logical, aliases in _dynamic_partition_specs():
         roots.append((partition, logical, _resolve_actual(logical, None, aliases, overlay_risk)))
+    for partition, logical in scan_profile.extra_roots(_property_rom_kind(), KNOWN_PARTITIONS):
+        if logical.name == 'etc' and logical.is_dir():
+            roots.append((partition, logical, _resolve_actual(logical, None, (), overlay_risk)))
     return roots
 
 
@@ -614,13 +712,10 @@ def _font_mount_targets() -> list[str]:
     return sorted(targets)
 
 
+@lru_cache(maxsize=1)
 def _property_rom_kind() -> str:
     """Detect the ROM from authoritative Android properties before filename hints."""
-    if base._getprop("ro.build.version.oplusrom") or base._getprop("ro.build.version.opporom"):
-        return "coloros"
-    if base._getprop("ro.mi.os.version.name") or base._getprop("ro.miui.ui.version.name"):
-        return "hyperos"
-    return ""
+    return scan_profile.detect(base._getprop)
 
 
 def _rom_markers(names: set[str]) -> dict[str, list[str]]:
@@ -863,7 +958,6 @@ def _refresh_known_slots(slots: dict[str, dict[str, Any]], families: dict[str, l
 def scan(args: Any) -> int:
     output: Path = args.output
     candidate_output = output.with_name("device_font_candidates.json")
-    probe = _write_live_candidate_probe(args, candidate_output)
     build_key, fingerprint, display_id = base.current_build_key(args.build_key)
     existing = base._load_json(output)
     fresh_scan = os.environ.get("LUOSHU_FRESH_STOCK_SCAN", "").strip() == "1"
@@ -876,6 +970,10 @@ def scan(args: Any) -> int:
     else:
         existing_for_scan = existing
     if not fresh_scan and not args.force and existing_for_scan is not None and _can_reuse(existing_for_scan, build_key):
+        probe = _reuse_live_candidate_probe(args, candidate_output, build_key)
+        probe_reused = probe is not None
+        if probe is None:
+            probe = _write_live_candidate_probe(args, candidate_output, build_key)
         summary = existing_for_scan["scanSummary"]
         _write_dynamic_partition_manifest(output, existing_for_scan.get("discoveredPartitions", []))
         print(json.dumps({
@@ -888,10 +986,12 @@ def scan(args: Any) -> int:
             "heuristicSlotCount": int(summary.get("heuristicUiFileCount", 0)),
             "genericSlotCount": int(summary.get("verifiedScanUiFileCount", 0)),
             "candidatePathCount": int(probe.get("candidateCount", 0)),
+            "candidateProbeReused": probe_reused,
             "themeOverrideCount": len(summary.get("themeOverrideRoots", [])),
             "romKind": existing_for_scan.get("romKind", "generic"),
         }, ensure_ascii=False))
         return 0
+    probe = _write_live_candidate_probe(args, candidate_output, build_key)
     valid_existing = None
     if existing_for_scan is not None:
         try:
@@ -954,12 +1054,12 @@ def _scan_current_roots(args: Any, build_key: str, fingerprint: str, display_id:
     # first. An existing valid ColorOS inventory also keeps this pass ROM-local.
     coloros_cores = {*ROM_FONT_MARKERS["coloros"], "SysFont-Regular.ttf", "SysSans-En-Regular.ttf"}
     property_rom = _property_rom_kind()
-    coloros = (
+    coloros = property_rom != "originos" and (
         property_rom == "coloros"
         or (existing is not None and existing.get("romKind") == "coloros")
         or any(entry.get("slotName") in coloros_cores for entry in slots.values())
     )
-    hyperos = not coloros and (
+    hyperos = property_rom != "originos" and not coloros and (
         property_rom == "hyperos"
         or initial_rom == "hyperos"
         or bool(_rom_markers(names).get("hyperos"))
@@ -994,6 +1094,8 @@ def _scan_current_roots(args: Any, build_key: str, fingerprint: str, display_id:
         main_path, main_entry, rom = base._pick_main_slot(slots, families)
     if hyperos:
         rom = "hyperos"
+    elif property_rom == "originos":
+        rom = "originos"
 
     theme_roots = _theme_override_roots()
     mount_targets = _font_mount_targets()

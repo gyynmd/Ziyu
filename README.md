@@ -43,7 +43,7 @@
 
 ## 当前版本与验证状态
 
-当前源码候选版本为 **字域 v1.3.0**；是否已经正式发布，以 [字域 Releases](https://github.com/shishui611-art/Ziyu/releases) 中的正式条目为准。上游 LuoShu 的 Releases 用于查看上游历史。真机验证状态见[测试矩阵](docs/TEST_MATRIX.md)，自动化通过不代表所有机型均完成验收。
+当前源码候选版本为 **字域 v1.4.0**，新增和完善 vivo/iQOO 字体适配、组合微调及三套主题体验；是否已经正式发布，以 [字域 Releases](https://github.com/shishui611-art/Ziyu/releases) 中的正式条目为准。上游 LuoShu 的 Releases 用于查看上游历史。真机验证状态见[测试矩阵](docs/TEST_MATRIX.md)，自动化通过不代表所有机型均完成验收。
 
 Release 发布流程会验证 ZIP、内置 App 和 SHA-256，并自动同步更新清单。App 的“模块更新”会直接请求 GitHub Release API、Release 下载地址和 Raw 文件；国内网络可能无法检查或下载。接入国内可直连发布源并完成无代理实测前，不能承诺免代理更新。
 

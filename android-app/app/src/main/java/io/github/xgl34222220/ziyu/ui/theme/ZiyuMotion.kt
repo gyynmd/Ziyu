@@ -1,15 +1,10 @@
 package io.github.xgl34222220.ziyu.ui.theme
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -20,12 +15,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
+import io.github.suqi8.coui.kmp.theme.COUITheme
+import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
+import io.github.xgl34222220.ziyu.ui.theme.LocalUiStyle
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlinx.coroutines.delay
 
 internal object ZiyuMotionTokens {
@@ -43,8 +40,9 @@ internal fun ZiyuLoadingSkeleton(
     shape: Shape = RoundedCornerShape(12.dp),
     revealDelayMs: Long = ZiyuMotionTokens.LoadingRevealDelay,
 ) {
+    val style = LocalUiStyle.current
     var revealed by remember(active) { mutableStateOf(false) }
-    LaunchedEffect(active, revealDelayMs) {
+    LaunchedEffect(active, revealDelayMs, style) {
         revealed = false
         if (active) {
             delay(revealDelayMs)
@@ -52,41 +50,31 @@ internal fun ZiyuLoadingSkeleton(
         }
     }
 
+    val motion = when (style) {
+        UiStyle.MATERIAL -> SkeletonMotion(durationMs = ZiyuMotionTokens.Fast, alpha = .075f, easing = FastOutSlowInEasing)
+        UiStyle.MIUIX -> SkeletonMotion(durationMs = ZiyuMotionTokens.Micro, alpha = .055f, easing = LinearOutSlowInEasing)
+        UiStyle.COUI -> SkeletonMotion(durationMs = ZiyuMotionTokens.Normal, alpha = .07f, easing = LinearOutSlowInEasing)
+    }
     val revealAlpha by animateFloatAsState(
         targetValue = if (active && revealed) 1f else 0f,
-        animationSpec = tween(ZiyuMotionTokens.Micro),
+        animationSpec = tween(motion.durationMs, easing = motion.easing),
         label = "ziyuSkeletonAlpha",
     )
-    val shimmer = rememberInfiniteTransition(label = "ziyuSkeleton")
-    val progress by shimmer.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1400, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "ziyuSkeletonProgress",
-    )
-    val base = MaterialTheme.colorScheme.onSurface.copy(alpha = .055f)
-    val highlight = MaterialTheme.colorScheme.onSurface.copy(alpha = .13f)
+    val base = when (style) {
+        UiStyle.MATERIAL -> MaterialTheme.colorScheme.onSurface
+        UiStyle.MIUIX -> MiuixTheme.colorScheme.onSurface
+        UiStyle.COUI -> COUITheme.colorScheme.onSurface
+    }.copy(alpha = motion.alpha)
     Box(
         modifier = modifier
             .clip(shape)
-            .drawBehind {
-                if (revealAlpha <= 0f) return@drawBehind
-                val band = size.width * .42f
-                val startX = -band + (size.width + band * 2f) * progress
-                drawRect(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            base.copy(alpha = base.alpha * revealAlpha),
-                            highlight.copy(alpha = highlight.alpha * revealAlpha),
-                            base.copy(alpha = base.alpha * revealAlpha),
-                        ),
-                        start = Offset(startX, 0f),
-                        end = Offset(startX + band, size.height),
-                    ),
-                )
-            },
+            .graphicsLayer { alpha = revealAlpha }
+            .background(base),
     )
 }
+
+private data class SkeletonMotion(
+    val durationMs: Int,
+    val alpha: Float,
+    val easing: androidx.compose.animation.core.Easing,
+)

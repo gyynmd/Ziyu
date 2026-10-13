@@ -958,10 +958,21 @@ def main() -> int:
             result = verify_legacy(args.module_root, args.visible_root, args.mountinfo, require_mounts=(mode != "nomount"), payload_root=payload)
     except (OSError, RouteError) as error:
         result = {"mode": args.mode, "state": "failed", "namespace": str(args.visible_root), "failures": [str(error)]}
+    config_root = args.module_root / "config"
+    font_file = config_root / "active_font.conf"
+    font = font_file.read_text(encoding="utf-8").strip() if font_file.is_file() else "unknown"
+    font = args.active_font or (live.get('font') if live else None) or font
+    result["activeFont"] = font
+    result["bootId"] = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+    result["checkedAt"] = int(time.time())
+    manifest_file = config_root / "font-payload-manifest.conf"
+    result["payloadManifestSha256"] = sha256(manifest_file) if manifest_file.is_file() else ""
     raw = json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(raw + "\n", encoding="utf-8")
+        report_temp = args.output.with_name(args.output.name + f".tmp.{os.getpid()}")
+        report_temp.write_text(raw + "\n", encoding="utf-8")
+        os.replace(report_temp, args.output)
         if args.output.name in {"mount-backend-verification.json", "device-font-load-route-verification.json"}:
             warnings = result.get("warnings", [])
             reasons = {
@@ -991,10 +1002,8 @@ def main() -> int:
                 message += f"。详细提示：{detail}"
             config = args.module_root / "config/font-apply-result.conf"
             config.parent.mkdir(parents=True, exist_ok=True)
-            font_file = args.module_root / "config/active_font.conf"
-            font = font_file.read_text(encoding="utf-8").strip() if font_file.is_file() else "unknown"
-            font = args.active_font or (live.get('font') if live else None) or font
-            values = {"boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+            values = {"boot_id": result["bootId"],
+                      "payload_manifest_sha256": result["payloadManifestSha256"],
                       "font": font, "state": result.get("state", "failed"),
                       "applied_count": applied, "unapplied_count": len(result.get("unappliedFonts", [])),
                       "mounted_count": mounted, "unconfirmed_count": unconfirmed,

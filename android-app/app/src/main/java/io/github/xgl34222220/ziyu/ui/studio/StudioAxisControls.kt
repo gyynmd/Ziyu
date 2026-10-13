@@ -30,9 +30,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSlider as Slider
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,7 +56,9 @@ import io.github.xgl34222220.ziyu.ui.font.fontAxisValueLabel
 import io.github.xgl34222220.ziyu.ui.font.fontFixedWeight
 import io.github.xgl34222220.ziyu.ui.font.fontStaticWeights
 import io.github.xgl34222220.ziyu.ui.font.fontWeightName
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalUiStyle
+import io.github.xgl34222220.ziyu.ui.appearance.UiStyle
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuLoadingSkeleton
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -158,7 +160,7 @@ internal fun MaterialStudioAxisControls(
 }
 
 @Composable
-internal fun MiuixStudioAxisControls(
+internal fun NativeStudioAxisControls(
     font: FontItem,
     weight: Int,
     axes: Map<String, Float>,
@@ -167,7 +169,7 @@ internal fun MiuixStudioAxisControls(
     onAxis: (String, Float) -> Unit,
 ) {
     val axisInfo = rememberWeightAxisInfo(font)
-    val tokens = LocalMiuixTokens.current
+    val tokens = LocalZiyuPaletteTokens.current
     when {
         font.variable && axisInfo.loading -> AxisLoadingRow()
         font.variable && axisInfo.axes.isNotEmpty() -> {
@@ -247,7 +249,7 @@ internal fun MiuixStudioAxisControls(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 fontStaticWeights(font).forEach { option ->
-                    MiuixWeightChip(
+                    NativeWeightChip(
                         text = fontWeightName(option),
                         selected = option == weight,
                         enabled = enabled,
@@ -382,8 +384,13 @@ private fun MaterialWeightChip(text: String, selected: Boolean, enabled: Boolean
 }
 
 @Composable
-private fun MiuixWeightChip(text: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    WeightChoiceChip(text, selected, enabled, RoundedCornerShape(16.dp), onClick)
+private fun NativeWeightChip(text: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val shape = when (LocalUiStyle.current) {
+        UiStyle.MIUIX -> RoundedCornerShape(16.dp)
+        UiStyle.COUI -> RoundedCornerShape(12.dp)
+        UiStyle.MATERIAL -> RoundedCornerShape(999.dp)
+    }
+    WeightChoiceChip(text, selected, enabled, shape, onClick)
 }
 
 @Composable

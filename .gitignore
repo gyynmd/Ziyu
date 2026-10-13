@@ -1,4 +1,8 @@
 dist/
+/outputs/
+/diagnostics/
+/.superpowers/
+/diag*_tmp.sh
 .runtime-work/
 common/python/
 __pycache__/

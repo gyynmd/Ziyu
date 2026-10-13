@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # One decision per boot: automatic provider selection or the user's self-mount mode.
-# Provider mode publishes before provider scan. Failures never change the user's
-# preference or hand a self-mount transaction to an external provider.
+# Automatic mode may try self-mount after an external route fails verification;
+# every active backend still must pass PID 1 route verification.
 set +e
 MODDIR="${MODDIR:-${MODULE_DIR:-/data/adb/modules/LuoShu}}"
 MODULE_DIR="$MODDIR"
@@ -14,17 +14,19 @@ _lbr_runtime_file="${BASH_SOURCE:-$0}"
 case "$_lbr_runtime_file" in */common/mount_backend_runtime.sh) _lbr_source_common="${_lbr_runtime_file%/*}" ;; esac
 
 luoshu_backend_load_dependencies() {
-    for _lbr_dependency in private_payload skip_mount_ownership mount_backend_preferences \
+    for _lbr_dependency in private_payload font_live_state mount_backend_state skip_mount_ownership mount_backend_preferences \
         mount_provider_detection mount_backend_policy mount_provider_payload root_manager_detection; do
         _lbr_helper="$MODDIR/common/$_lbr_dependency.sh"
         [ -f "$_lbr_helper" ] || _lbr_helper="$_lbr_source_common/$_lbr_dependency.sh"
         [ ! -f "$_lbr_helper" ] || . "$_lbr_helper"
     done
+    type ziyu_backend_state_load >/dev/null 2>&1 || return 1
     [ "${LUOSHU_BACKEND_TEST_MODE:-0}" != 1 ] || return 0
     for _lbr_dependency in util_functions font_config_runtime font_config_partitions mount_compat mount_self_backend; do
         _lbr_helper="$MODDIR/common/$_lbr_dependency.sh"
         [ ! -f "$_lbr_helper" ] || . "$_lbr_helper"
     done
+    return 0
 }
 
 _lbr_log() {
@@ -34,7 +36,7 @@ _lbr_log() {
 
 
 _lbr_value() {
-    sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1 | tr -d '\r\n'
+    ziyu_mount_conf_value "$1" "$2"
 }
 
 
@@ -42,12 +44,12 @@ _lbr_log_mount_summary() {
     _lbr_summary_result="$1"
     _lbr_summary_stage="${2:-unknown}"
     _lbr_summary_reason="${3:-none}"
-    _lbr_summary_selected=$(_lbr_value "$_lbr_state" selected_backend)
-    _lbr_summary_active=$(_lbr_value "$_lbr_state" active_backend)
-    _lbr_summary_verify=$(_lbr_value "$_lbr_state" verification)
-    _lbr_summary_fallback=$(_lbr_value "$_lbr_state" fallback_used)
-    _lbr_summary_fallback_reason=$(_lbr_value "$_lbr_state" fallback_reason)
-    _lbr_summary_self_backend=$(_lbr_value "$_lbr_state" selected_self_backend)
+    _lbr_summary_selected=$ZIYU_BACKEND_SELECTED_BACKEND
+    _lbr_summary_active=$ZIYU_BACKEND_ACTIVE_BACKEND
+    _lbr_summary_verify=$ZIYU_BACKEND_VERIFICATION
+    _lbr_summary_fallback=$ZIYU_BACKEND_FALLBACK_USED
+    _lbr_summary_fallback_reason=$ZIYU_BACKEND_FALLBACK_REASON
+    _lbr_summary_self_backend=$ZIYU_BACKEND_SELECTED_SELF_BACKEND
     _lbr_summary_provider="${PROVIDER_ID:-unknown}"
     _lbr_summary_provider_name="$_lbr_summary_provider"
     _lbr_summary_selected_name="$_lbr_summary_selected"
@@ -79,7 +81,7 @@ _lbr_log_mount_summary() {
        [ "${LUOSHU_BACKEND_TEST_MODE:-0}" != 1 ] && \
        [ -f "$MODDIR/common/mount_backend_details.sh" ]; then
         . "$MODDIR/common/mount_backend_details.sh"
-        luoshu_mount_backend_details
+        luoshu_mount_backend_details snapshot
         _lbr_summary_provider_name="${MOUNT_PROVIDER_NAME:-$_lbr_summary_provider}"
         _lbr_summary_method="${MOUNT_METHOD:-未确认}"
     elif [ "$_lbr_summary_result" = failed ]; then
@@ -96,6 +98,7 @@ _lbr_log_mount_summary() {
 
 
 _lbr_active_font() {
+    if type ziyu_current_payload_font >/dev/null 2>&1; then ziyu_current_payload_font "$MODDIR"; return $?; fi
     if type ziyu_live_font >/dev/null 2>&1; then ziyu_live_font && return 0; fi
     _lbr_active=$(head -n1 "$MODDIR/config/active_font.conf" 2>/dev/null | tr -d '\r\n')
     [ -n "$_lbr_active" ] || _lbr_active=default
@@ -122,11 +125,11 @@ _lbr_restore_default_provider_payload() {
     else
         # Older builds did not always write a publisher receipt. A prior boot's
         # matching external-backend record is an equivalent ownership proof.
-        _lbr_previous_root=$(_lbr_value "$_lbr_state" provider_content_root)
-        _lbr_previous_id=$(_lbr_value "$_lbr_state" provider_id)
-        _lbr_previous_layout=$(_lbr_value "$_lbr_state" provider_layout)
-        _lbr_previous_active=$(_lbr_value "$_lbr_state" active_backend)
-        _lbr_previous_selected=$(_lbr_value "$_lbr_state" selected_backend)
+        _lbr_previous_root=$ZIYU_BACKEND_PROVIDER_CONTENT_ROOT
+        _lbr_previous_id=$ZIYU_BACKEND_PROVIDER_ID
+        _lbr_previous_layout=$ZIYU_BACKEND_PROVIDER_LAYOUT
+        _lbr_previous_active=$ZIYU_BACKEND_ACTIVE_BACKEND
+        _lbr_previous_selected=$ZIYU_BACKEND_SELECTED_BACKEND
         if [ -z "$_lbr_previous_root" ] && [ "$_lbr_publish_root" = "$MODDIR" ]; then
             # Early provider-first builds recorded the backend but not its content
             # root. Native module trees are the only safe inferred destination.
@@ -184,13 +187,15 @@ _lbr_write_state() {
         printf 'provider_layout=%s\n' "${PROVIDER_LAYOUT:-unknown}"
         printf 'provider_reason=%s\n' "${PROVIDER_REASON:-unknown}"
         printf 'provider_content_root=%s\n' "${PROVIDER_CONTENT_ROOT:-$MODDIR}"
-        printf 'nomount_kernel_usable=%s\n' "${NOMOUNT_KERNEL_USABLE:-0}"
+        printf 'nomount_kernel_usable=%s\n' "${NOMOUNT_KERNEL_USABLE:-unknown}"
         printf 'preferred_backend=%s\n' "${_lbr_preference:-auto}"
         printf 'preference_failure=%s\n' "${_lbr_preference_failure:-none}"
         printf 'selected_backend=%s\n' "$_lbr_selected"
         printf 'selected_self_backend=%s\n' "${_lbr_self_backend_selected:-legacy}"
         printf 'active_self_backend=%s\n' "${_lbr_self_backend_active:-none}"
         printf 'active_backend=%s\n' "$_lbr_active"
+        printf 'payload_font=%s\n' "$(_lbr_active_font)"
+        printf 'payload_manifest_sha256=%s\n' "$(sha256sum "$MODDIR/config/font-payload-manifest.conf" 2>/dev/null | awk '{print $1}')"
         printf 'backend_conflict=%s\n' "${BACKEND_CONFLICT:-0}"
         printf 'fallback_used=%s\n' "$_lbr_fallback"
         printf 'fallback_reason=%s\n' "${_lbr_fallback_reason:-none}"
@@ -205,6 +210,9 @@ _lbr_write_state() {
     } > "$_lbr_tmp" 2>/dev/null || return 1
     chmod 0600 "$_lbr_tmp" 2>/dev/null || true
     mv -f "$_lbr_tmp" "$_lbr_state" 2>/dev/null || return 1
+    # Refresh once after a successful atomic commit, never reuse a failed write.
+    ziyu_backend_state_load "$_lbr_state" || :
+    return 0
 }
 
 
@@ -251,6 +259,7 @@ _lbr_verify_font_route() {
         _lbr_py_rc=$("$_lbr_python" "$MODDIR/common/font_route_verify.py" \
             --module-root "$MODDIR" --visible-root "${LUOSHU_FONT_VERIFY_VISIBLE_ROOT:-/proc/1/root}" \
             --mountinfo "${LUOSHU_BACKEND_MOUNTINFO:-/proc/1/mountinfo}" --mode "$_lbr_verify_mode" \
+            --active-font "$_lbr_active" \
             --output "$MODDIR/config/mount-backend-verification.json" 2>>"$_lbr_log")
     else
         _lbr_pyroot="$MODDIR/common/python"
@@ -259,6 +268,7 @@ _lbr_verify_font_route() {
             "$_lbr_python" "$MODDIR/common/font_route_verify.py" \
             --module-root "$MODDIR" --visible-root "${LUOSHU_FONT_VERIFY_VISIBLE_ROOT:-/proc/1/root}" \
             --mountinfo "${LUOSHU_BACKEND_MOUNTINFO:-/proc/1/mountinfo}" --mode "$_lbr_verify_mode" \
+            --active-font "$_lbr_active" \
             --output "$MODDIR/config/mount-backend-verification.json" 2>>"$_lbr_log")
     fi
     _lbr_rc=$?
@@ -276,7 +286,7 @@ _lbr_verify_font_route() {
         FONT_ROUTE_VERIFY_RESULT=partial
         FONT_ROUTE_WARNING=$(_lbr_value "$MODDIR/config/font-apply-result.conf" warning)
         # Deduplicate repeated post-mount/service checks within the same boot.
-        if [ "$(_lbr_value "$_lbr_state" mount_warning)" != "$FONT_ROUTE_WARNING" ]; then
+        if [ "$ZIYU_BACKEND_MOUNT_WARNING" != "$FONT_ROUTE_WARNING" ]; then
             printf '[%s] [MOUNT] WARN %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$FONT_ROUTE_WARNING" >> "$MODDIR/logs/fontswitch.log"
         fi
     fi
@@ -315,30 +325,83 @@ _lbr_set_self_skip() {
     [ "$_lbr_skip_rc" -eq 0 ] || [ "$_lbr_skip_rc" -eq 2 ]
 }
 
+_lbr_nomount_runtime_ready() {
+    # The boot choice stays frozen. Refresh only that NoMount instance's API
+    # after the manager has had a chance to load its LKM and scan our public tree.
+    [ "${META_ENGINE:-none}" = nomount ] || return 0
+    [ "${LUOSHU_BACKEND_TEST_MODE:-0}" != 1 ] || return 0
+    NOMOUNT_KERNEL_USABLE=unknown
+    _lbr_nm_dir="${META_ACTIVE_DIR:-}"
+    _lbr_nm_selector="${LUOSHU_META_DETECT_ROOT:-/data/adb}/metamodule"
+    _lbr_nm_expected=$(readlink -f "$_lbr_nm_dir" 2>/dev/null)
+    _lbr_nm_current=$(readlink -f "$_lbr_nm_selector" 2>/dev/null)
+    if [ -z "$_lbr_nm_expected" ] || [ "$_lbr_nm_expected" != "$_lbr_nm_current" ] || \
+       [ -e "$_lbr_nm_dir/disable" ] || [ -e "$_lbr_nm_dir/remove" ] || \
+       [ "$(_luoshu_meta_type_for_dir "$_lbr_nm_dir")" != nomount ]; then
+        META_READY=0
+        META_ENABLED=0
+        META_USABLE_REASON=nomount-provider-changed-or-disabled
+        PROVIDER_STATE=unknown
+        PROVIDER_REASON="$META_USABLE_REASON"
+        return 1
+    fi
+    META_NOMOUNT_CLI=''
+    for _lbr_nm_cli in "$_lbr_nm_dir/bin/nm" "$_lbr_nm_dir/nm" "$_lbr_nm_dir/nomount"; do
+        [ -x "$_lbr_nm_cli" ] || continue
+        META_NOMOUNT_CLI="$_lbr_nm_cli"
+        break
+    done
+    if [ "$_lbr_selected" = self ]; then
+        # Observe the API without changing the recorded provider exclusion that
+        # belongs to the user's self-mount selection.
+        luoshu_nomount_kernel_probe "$META_NOMOUNT_CLI"
+        return $?
+    fi
+    if luoshu_nomount_kernel_probe "$META_NOMOUNT_CLI"; then
+        META_READY=1
+        META_USABLE_REASON=nomount-runtime-ready
+        PROVIDER_STATE=available
+        PROVIDER_REASON=nomount-runtime-ready
+        # NoMount v2 removes this semaphore after all rule additions. Do not
+        # replace an unfinished provider at post-mount; service retries once.
+        if [ "$_lbr_stage" = post-mount ] && [ -e /data/adb/nomount/.booting ]; then
+            PROVIDER_REASON=nomount-provider-scan-in-progress
+            return 2
+        fi
+        return 0
+    fi
+    META_READY=0
+    META_USABLE_REASON=nomount-runtime-api-unavailable
+    PROVIDER_STATE=unknown
+    PROVIDER_REASON="$META_USABLE_REASON"
+    [ "$_lbr_stage" != post-mount ] || return 2
+    return 1
+}
+
 _lbr_restore_boot_choice() {
-    ROOT_MANAGER=$(_lbr_value "$_lbr_state" root_manager)
-    ROOT_VERSION=$(_lbr_value "$_lbr_state" root_version)
-    ROOT_VERSION_CODE=$(_lbr_value "$_lbr_state" root_version_code)
-    ROOT_DETECTION_SOURCE=$(_lbr_value "$_lbr_state" root_detection_source)
-    META_DISPLAY_VERSION=$(_lbr_value "$_lbr_state" meta_version)
-    META_HYBRID_DEFAULT_MODE=$(_lbr_value "$_lbr_state" meta_hybrid_mode)
-    META_ENGINE=$(_lbr_value "$_lbr_state" meta_engine)
-    META_AVAILABLE=$(_lbr_value "$_lbr_state" meta_available)
-    META_ENABLED=$(_lbr_value "$_lbr_state" meta_enabled)
-    META_USABLE=$(_lbr_value "$_lbr_state" meta_usable)
-    META_READY=$(_lbr_value "$_lbr_state" meta_ready)
-    META_USABLE_REASON=$(_lbr_value "$_lbr_state" meta_usable_reason)
-    META_CLEANUP_CAPABILITY=$(_lbr_value "$_lbr_state" meta_cleanup_capability)
-    META_ACTIVE_DIR=$(_lbr_value "$_lbr_state" meta_active_dir)
-    META_MODULE_DIR=$(_lbr_value "$_lbr_state" meta_module_dir)
-    META_DETECTION_CHECKS=$(_lbr_value "$_lbr_state" meta_detection_checks)
-    FONT_ROUTE_WARNING=$(_lbr_value "$_lbr_state" mount_warning)
-    PROVIDER_STATE=$(_lbr_value "$_lbr_state" provider_state)
-    PROVIDER_ID=$(_lbr_value "$_lbr_state" provider_id)
-    PROVIDER_LAYOUT=$(_lbr_value "$_lbr_state" provider_layout)
-    PROVIDER_REASON=$(_lbr_value "$_lbr_state" provider_reason)
-    PROVIDER_CONTENT_ROOT=$(_lbr_value "$_lbr_state" provider_content_root)
-    NOMOUNT_KERNEL_USABLE=$(_lbr_value "$_lbr_state" nomount_kernel_usable)
+    ROOT_MANAGER=$ZIYU_BACKEND_ROOT_MANAGER
+    ROOT_VERSION=$ZIYU_BACKEND_ROOT_VERSION
+    ROOT_VERSION_CODE=$ZIYU_BACKEND_ROOT_VERSION_CODE
+    ROOT_DETECTION_SOURCE=$ZIYU_BACKEND_ROOT_DETECTION_SOURCE
+    META_DISPLAY_VERSION=$ZIYU_BACKEND_META_VERSION
+    META_HYBRID_DEFAULT_MODE=$ZIYU_BACKEND_META_HYBRID_MODE
+    META_ENGINE=$ZIYU_BACKEND_META_ENGINE
+    META_AVAILABLE=$ZIYU_BACKEND_META_AVAILABLE
+    META_ENABLED=$ZIYU_BACKEND_META_ENABLED
+    META_USABLE=$ZIYU_BACKEND_META_USABLE
+    META_READY=$ZIYU_BACKEND_META_READY
+    META_USABLE_REASON=$ZIYU_BACKEND_META_USABLE_REASON
+    META_CLEANUP_CAPABILITY=$ZIYU_BACKEND_META_CLEANUP_CAPABILITY
+    META_ACTIVE_DIR=$ZIYU_BACKEND_META_ACTIVE_DIR
+    META_MODULE_DIR=$ZIYU_BACKEND_META_MODULE_DIR
+    META_DETECTION_CHECKS=$ZIYU_BACKEND_META_DETECTION_CHECKS
+    FONT_ROUTE_WARNING=$ZIYU_BACKEND_MOUNT_WARNING
+    PROVIDER_STATE=$ZIYU_BACKEND_PROVIDER_STATE
+    PROVIDER_ID=$ZIYU_BACKEND_PROVIDER_ID
+    PROVIDER_LAYOUT=$ZIYU_BACKEND_PROVIDER_LAYOUT
+    PROVIDER_REASON=$ZIYU_BACKEND_PROVIDER_REASON
+    PROVIDER_CONTENT_ROOT=$ZIYU_BACKEND_PROVIDER_CONTENT_ROOT
+    NOMOUNT_KERNEL_USABLE=$ZIYU_BACKEND_NOMOUNT_KERNEL_USABLE
     [ -n "$ROOT_VERSION_CODE" ] || ROOT_VERSION_CODE=0
     [ -n "$META_AVAILABLE" ] || META_AVAILABLE=0
     [ -n "$META_ENABLED" ] || META_ENABLED=0
@@ -346,15 +409,15 @@ _lbr_restore_boot_choice() {
     [ -n "$META_READY" ] || META_READY=0
     [ -n "$META_USABLE_REASON" ] || META_USABLE_REASON=unknown
     [ -n "$META_CLEANUP_CAPABILITY" ] || META_CLEANUP_CAPABILITY=none
-    [ -n "$NOMOUNT_KERNEL_USABLE" ] || NOMOUNT_KERNEL_USABLE=0
-    _lbr_selected=$(_lbr_value "$_lbr_state" selected_backend)
-    _lbr_preference=$(_lbr_value "$_lbr_state" preferred_backend)
-    _lbr_preference_failure=$(_lbr_value "$_lbr_state" preference_failure)
-    _lbr_self_backend_selected=$(_lbr_value "$_lbr_state" selected_self_backend)
-    _lbr_self_backend_active=$(_lbr_value "$_lbr_state" active_self_backend)
-    _lbr_fallback=$(_lbr_value "$_lbr_state" fallback_used)
-    _lbr_fallback_reason=$(_lbr_value "$_lbr_state" fallback_reason)
-    _lbr_fallback_service_retry=$(_lbr_value "$_lbr_state" fallback_service_retry)
+    [ -n "$NOMOUNT_KERNEL_USABLE" ] || NOMOUNT_KERNEL_USABLE=unknown
+    _lbr_selected=$ZIYU_BACKEND_SELECTED_BACKEND
+    _lbr_preference=$ZIYU_BACKEND_PREFERRED_BACKEND
+    _lbr_preference_failure=$ZIYU_BACKEND_PREFERENCE_FAILURE
+    _lbr_self_backend_selected=$ZIYU_BACKEND_SELECTED_SELF_BACKEND
+    _lbr_self_backend_active=$ZIYU_BACKEND_ACTIVE_SELF_BACKEND
+    _lbr_fallback=$ZIYU_BACKEND_FALLBACK_USED
+    _lbr_fallback_reason=$ZIYU_BACKEND_FALLBACK_REASON
+    _lbr_fallback_service_retry=$ZIYU_BACKEND_FALLBACK_SERVICE_RETRY
     [ -n "$_lbr_fallback" ] || _lbr_fallback=0
     [ -n "$_lbr_fallback_reason" ] || _lbr_fallback_reason=none
     [ -n "$_lbr_fallback_service_retry" ] || _lbr_fallback_service_retry=0
@@ -402,6 +465,10 @@ _lbr_run_self() {
     fi
     case "$_lbr_preference" in
         magic|overlayfs|self_mount) ;;
+        auto) [ "$_lbr_fallback" = 1 ] || {
+            _lbr_write_state self none 0 not-selected failed "$_lbr_stage" failed self-backend-not-requested
+            return 1
+        } ;;
         *)
             _lbr_write_state self none 0 not-selected failed "$_lbr_stage" failed self-backend-not-requested
             return 1 ;;
@@ -463,6 +530,38 @@ _lbr_run_self() {
     _lbr_log_mount_summary success "$_lbr_stage" none
 }
 
+
+_lbr_try_auto_self_fallback() {
+    _lbr_fallback_cause="${1:-external-provider-failed}"
+    [ "$_lbr_preference" = auto ] || return 2
+    case "$_lbr_selected" in external|unresolved) ;; *) return 2 ;; esac
+    [ "$_lbr_fallback" != 1 ] || return 2
+
+    _lbr_fallback=1
+    _lbr_fallback_reason="$_lbr_fallback_cause"
+    _lbr_selected=self
+    _lbr_self_backend_selected=self_mount
+    _lbr_self_backend_active=none
+    _lbr_log "[FALLBACK] external mount unavailable ($_lbr_fallback_cause); attempting verified self-mount"
+    _lbr_write_state self none 1 failed pending "$_lbr_stage" pending "self-fallback-pending:$_lbr_fallback_cause" || return 1
+
+    _lbr_fallback_expected_stage=$(_lbr_stage_for_root "$ROOT_MANAGER")
+    if [ "$_lbr_stage" != "$_lbr_fallback_expected_stage" ] && [ "$_lbr_stage" != service ]; then
+        _lbr_log_mount_summary pending "$_lbr_stage" "self-fallback-waiting-for-$_lbr_fallback_expected_stage"
+        return 0
+    fi
+
+    _lbr_run_self "$_lbr_stage"
+    _lbr_fallback_rc=$?
+    _lbr_fallback_state=$ZIYU_BACKEND_VERIFICATION
+    if [ "$_lbr_fallback_rc" -ne 0 ] && [ "$_lbr_fallback_state" = pending ]; then
+        _lbr_fallback_error="self-fallback-start-failed:$_lbr_fallback_cause"
+        _lbr_write_state self none 1 failed failed "$_lbr_stage" failed "$_lbr_fallback_error"
+        _lbr_log_mount_summary failed "$_lbr_stage" "$_lbr_fallback_error"
+    fi
+    return "$_lbr_fallback_rc"
+}
+
 luoshu_mount_backend_hook() {
     _lbr_stage="$1"
     mkdir -p "$MODDIR/config" "$MODDIR/logs" || return 1
@@ -470,6 +569,8 @@ luoshu_mount_backend_hook() {
         _lbr_log 'live transaction in progress or requires recovery; boot backend verification deferred'
         return 0
     fi
+    # Every hook takes a fresh, consistent snapshot; no cache crosses hooks.
+    ziyu_backend_state_load "$_lbr_state" || :
     _lbr_self_backend_selected=none
     _lbr_self_backend_active=none
     _lbr_preference=auto
@@ -489,8 +590,8 @@ luoshu_mount_backend_hook() {
             _lbr_log_mount_summary failed "$_lbr_stage" disabled-nomount-cleanup-failed
             return 1
         }
-        if [ "$(_lbr_value "$_lbr_state" boot_id)" = "$_lbr_boot" ] && \
-           [ "$(_lbr_value "$_lbr_state" active_backend)" = self ]; then
+        if [ "$ZIYU_BACKEND_BOOT_ID" = "$_lbr_boot" ] && \
+           [ "$ZIYU_BACKEND_ACTIVE_BACKEND" = self ]; then
             _lbr_restore_boot_choice
             _lbr_rollback_self_attempt || {
                 _lbr_write_state none self 0 blocked failed "$_lbr_stage" failed disabled-cleanup-failed
@@ -503,8 +604,8 @@ luoshu_mount_backend_hook() {
         return 0
     fi
 
-    if [ "$(_lbr_value "$_lbr_state" boot_id)" = "$_lbr_boot" ] && \
-       { [ "$_lbr_stage" != post-fs-data ] || [ "$(_lbr_value "$_lbr_state" last_error)" != early-hook-missing ]; }; then
+    if [ "$ZIYU_BACKEND_BOOT_ID" = "$_lbr_boot" ] && \
+       { [ "$_lbr_stage" != post-fs-data ] || [ "$ZIYU_BACKEND_LAST_ERROR" != early-hook-missing ]; }; then
         _lbr_restore_boot_choice
     else
         # The initial choice and publication have a single early-boot boundary.
@@ -513,6 +614,16 @@ luoshu_mount_backend_hook() {
             _lbr_log_mount_summary pending "$_lbr_stage" early-hook-missing
             return 1
         fi
+        _lbr_preference=$(luoshu_mount_preference_get)
+        _lbr_previous_boot=$ZIYU_BACKEND_BOOT_ID
+        if [ "$_lbr_preference" = auto ] && [ -n "$_lbr_previous_boot" ] && [ "$_lbr_previous_boot" != "$_lbr_boot" ]; then
+            # A previous automatic self-fallback owns skip markers only for
+            # that boot. Release those markers before giving providers a
+            # chance on this new boot; never remove a foreign marker.
+            if ! ziyu_skip_release_owned "$MODDIR"; then
+                _lbr_log '[挂载原因] 上次启动的字域自有 skip 标记未能清理；继续检测并按路由结果回退'
+            fi
+        fi
         if ! _lbr_detect; then
             _lbr_detect_failure=provider-detection-failed
             PROVIDER_STATE=unknown
@@ -520,7 +631,6 @@ luoshu_mount_backend_hook() {
             PROVIDER_LAYOUT=unknown
             PROVIDER_REASON=provider-detection-failed
         fi
-        _lbr_preference=$(luoshu_mount_preference_get)
         _lbr_has_font=false
         [ "$(_lbr_active_font)" = default ] || _lbr_has_font=true
         _lbr_selected=$(ziyu_mount_select false "$PROVIDER_STATE" "$_lbr_has_font" "$_lbr_preference")
@@ -529,10 +639,18 @@ luoshu_mount_backend_hook() {
             external)
                 # Publish files first; clear only owned exclusions after success.
                 if ! ziyu_provider_payload_publish "$MODDIR" "$PROVIDER_CONTENT_ROOT" "$PROVIDER_LAYOUT"; then
-                    _lbr_write_state external none 0 failed not-run "$_lbr_stage" failed provider-publish-failed
-                    _lbr_log_mount_summary failed "$_lbr_stage" provider-publish-failed
+                    _lbr_route_error=provider-publish-failed
+                    _lbr_try_auto_self_fallback "$_lbr_route_error"
+                    _lbr_fallback_rc=$?
+                    [ "$_lbr_fallback_rc" -eq 2 ] || return "$_lbr_fallback_rc"
+                    _lbr_write_state external none 0 failed not-run "$_lbr_stage" failed "$_lbr_route_error"
+                    _lbr_log_mount_summary failed "$_lbr_stage" "$_lbr_route_error"
                     return 1
                 elif ! ziyu_skip_release_owned "$MODDIR"; then
+                    _lbr_route_error=owned-skip-cleanup-failed
+                    _lbr_try_auto_self_fallback "$_lbr_route_error"
+                    _lbr_fallback_rc=$?
+                    [ "$_lbr_fallback_rc" -eq 2 ] || return "$_lbr_fallback_rc"
                     _lbr_write_state external none 0 failed not-run "$_lbr_stage" failed owned-skip-cleanup-failed
                     _lbr_log_mount_summary failed "$_lbr_stage" owned-skip-cleanup-failed
                     return 1
@@ -570,6 +688,10 @@ luoshu_mount_backend_hook() {
                 esac
                 ;;
             unresolved)
+                _lbr_route_error="provider-unavailable:$PROVIDER_REASON"
+                _lbr_try_auto_self_fallback "$_lbr_route_error"
+                _lbr_fallback_rc=$?
+                [ "$_lbr_fallback_rc" -eq 2 ] || return "$_lbr_fallback_rc"
                 _lbr_write_state external none 0 unavailable not-run "$_lbr_stage" failed "provider-unavailable:$PROVIDER_REASON"
                 _lbr_log_mount_summary failed "$_lbr_stage" "provider-unavailable:$PROVIDER_REASON"
                 return 1
@@ -595,33 +717,88 @@ luoshu_mount_backend_hook() {
     case "$_lbr_selected" in
         external)
             [ "$_lbr_stage" != post-fs-data ] || return 0
-            if [ "$PROVIDER_STATE" != available ]; then
+            if [ "$PROVIDER_ID" = nomount ]; then
+                _lbr_nomount_runtime_ready
+                _lbr_nm_ready_rc=$?
+                if [ "$_lbr_nm_ready_rc" -eq 2 ]; then
+                    _lbr_write_state external none "$_lbr_fallback" prepared not-run "$_lbr_stage" pending "$PROVIDER_REASON"
+                    _lbr_log_mount_summary pending "$_lbr_stage" "$PROVIDER_REASON"
+                    return 0
+                elif [ "$_lbr_nm_ready_rc" -ne 0 ]; then
+                    _lbr_route_error="provider-unavailable:$PROVIDER_REASON"
+                    _lbr_try_auto_self_fallback "$_lbr_route_error"
+                    _lbr_fallback_rc=$?
+                    [ "$_lbr_fallback_rc" -eq 2 ] || return "$_lbr_fallback_rc"
+                    _lbr_write_state external none 0 unavailable not-run "$_lbr_stage" failed "$_lbr_route_error"
+                    _lbr_log_mount_summary failed "$_lbr_stage" "$_lbr_route_error"
+                    return 1
+                fi
+            elif [ "$PROVIDER_STATE" != available ]; then
                 # Refresh read-only evidence after the metamodule hook. Never
                 # publish late, inject a private mount or change user preference.
                 _lbr_detect || :
                 if [ "$PROVIDER_STATE" != available ]; then
                     if [ -z "${META_ACTIVE_DIR:-}" ] || [ "${META_ENABLED:-0}" != 1 ]; then
-                        _lbr_write_state external none 0 unavailable not-run "$_lbr_stage" failed "provider-unavailable:$PROVIDER_REASON"
-                        _lbr_log_mount_summary failed "$_lbr_stage" "provider-unavailable:$PROVIDER_REASON"
+                        _lbr_route_error="provider-unavailable:$PROVIDER_REASON"
+                        _lbr_try_auto_self_fallback "$_lbr_route_error"
+                        _lbr_fallback_rc=$?
+                        [ "$_lbr_fallback_rc" -eq 2 ] || return "$_lbr_fallback_rc"
+                        _lbr_write_state external none 0 unavailable not-run "$_lbr_stage" failed "$_lbr_route_error"
+                        _lbr_log_mount_summary failed "$_lbr_stage" "$_lbr_route_error"
                         return 1
                     fi
                     PROVIDER_ID="${META_ENGINE:-unknown}"
                 fi
             fi
+            _lbr_receipt_sha=$(_lbr_value "$PROVIDER_CONTENT_ROOT/.ziyu-state/provider-published.conf" manifest_sha256)
+            _lbr_manifest_sha=$(sha256sum "$MODDIR/config/font-payload-manifest.conf" 2>/dev/null | awk '{print $1}')
+            if [ -n "$_lbr_receipt_sha" ] && [ "$_lbr_receipt_sha" != "$_lbr_manifest_sha" ]; then
+                _lbr_route_error=provider-published-payload-invalid
+                _lbr_try_auto_self_fallback "$_lbr_route_error"
+                _lbr_fallback_rc=$?
+                [ "$_lbr_fallback_rc" -eq 2 ] || return "$_lbr_fallback_rc"
+                _lbr_write_state external none 0 failed not-run "$_lbr_stage" failed "$_lbr_route_error"
+                _lbr_log_mount_summary failed "$_lbr_stage" "$_lbr_route_error"
+                return 1
+            fi
             if _lbr_verify_font_route external; then
-                _lbr_external_self_result=$(_lbr_value "$_lbr_state" self_result)
+                _lbr_external_self_result=$ZIYU_BACKEND_SELF_RESULT
                 _lbr_write_state external external "$_lbr_fallback" passed "${_lbr_external_self_result:-not-run}" "$_lbr_stage" "$FONT_ROUTE_VERIFY_RESULT" none
                 _lbr_log_mount_summary success "$_lbr_stage" none
                 return 0
             fi
-            _lbr_write_state external none 0 failed not-run "$_lbr_stage" failed external-route-verification-failed
-            _lbr_log_mount_summary failed "$_lbr_stage" external-route-verification-failed
+            _lbr_route_error=external-route-verification-failed
+            # The PID 1 verifier already checks the canonical bytes and hashes
+            # the visible route. Read the published copy again only on failure.
+            if ! ziyu_provider_payload_verify "$MODDIR" "$PROVIDER_CONTENT_ROOT" "$PROVIDER_LAYOUT"; then
+                _lbr_route_error=provider-published-payload-invalid
+            elif [ "$PROVIDER_ID" = nomount ] && [ "$_lbr_stage" = post-mount ]; then
+                # A live API does not prove the font rule batch is complete.
+                # Recheck once at service before choosing another backend.
+                _lbr_write_state external none "$_lbr_fallback" prepared not-run "$_lbr_stage" pending nomount-route-awaiting-service
+                _lbr_log_mount_summary pending "$_lbr_stage" nomount-route-awaiting-service
+                return 0
+            elif [ "$PROVIDER_ID" = mountify ] && [ -f "$MODDIR/common/mount_provider_reload.sh" ]; then
+                . "$MODDIR/common/mount_provider_reload.sh"
+                if ! ziyu_provider_reload_check "$MODDIR" request; then
+                    _lbr_route_error="$_lbr_route_error:${PROVIDER_RELOAD_REASON:-unknown}"
+                    _lbr_log "[挂载原因] ${PROVIDER_RELOAD_MESSAGE:-Mountify 字体路径验证失败}"
+                fi
+            fi
+            _lbr_try_auto_self_fallback "$_lbr_route_error"
+            _lbr_fallback_rc=$?
+            [ "$_lbr_fallback_rc" -eq 2 ] || return "$_lbr_fallback_rc"
+            _lbr_write_state external none 0 failed not-run "$_lbr_stage" failed "$_lbr_route_error"
+            _lbr_log_mount_summary failed "$_lbr_stage" "$_lbr_route_error"
             return 1
             ;;
         self)
-            [ "$(_lbr_value "$_lbr_state" self_result)" != failed ] || return 1
+            # Record real capability even when the user selected self-mount;
+            # this read-only refresh never changes their chosen mode.
+            [ "$_lbr_stage" = post-fs-data ] || _lbr_nomount_runtime_ready || :
+            [ "$ZIYU_BACKEND_SELF_RESULT" != failed ] || return 1
             # service normally verifies; only a selected fallback may inject there.
-            if [ "$_lbr_stage" = service ] && [ "$(_lbr_value "$_lbr_state" active_backend)" = self ]; then
+            if [ "$_lbr_stage" = service ] && [ "$ZIYU_BACKEND_ACTIVE_BACKEND" = self ]; then
                 if _lbr_verify_font_route self; then
                     _lbr_write_state self self "$_lbr_fallback" not-selected passed service "$FONT_ROUTE_VERIFY_RESULT" none
                     _lbr_log_mount_summary success service none
@@ -650,13 +827,13 @@ luoshu_mount_backend_hook() {
                 return 1
             fi
             if [ "$_lbr_stage" = service ] && [ "$_lbr_fallback" = 1 ] && \
-               [ "$(_lbr_value "$_lbr_state" active_backend)" != self ]; then
+               [ "$ZIYU_BACKEND_ACTIVE_BACKEND" != self ]; then
                 _lbr_run_self service
                 return $?
             fi
             [ "$_lbr_stage" = "$(_lbr_stage_for_root "$ROOT_MANAGER")" ] || return 0
-            if [ "$(_lbr_value "$_lbr_state" active_backend)" = self ] && \
-               [ "$(_lbr_value "$_lbr_state" verification)" = passed ]; then
+            if [ "$ZIYU_BACKEND_ACTIVE_BACKEND" = self ] && \
+               [ "$ZIYU_BACKEND_VERIFICATION" = passed ]; then
                 return 0
             fi
             _lbr_run_self "$_lbr_stage"
@@ -665,7 +842,7 @@ luoshu_mount_backend_hook() {
     esac
 }
 
-luoshu_backend_load_dependencies
+luoshu_backend_load_dependencies || { return 1 2>/dev/null || exit 1; }
 if [ "${0##*/}" = mount_backend_runtime.sh ]; then
     case "${1:-hook}" in
         hook) luoshu_mount_backend_hook "${2:-post-fs-data}" ;;

@@ -26,15 +26,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
+import io.github.xgl34222220.ziyu.ui.design.ZiyuAlertDialog as AlertDialog
+import io.github.xgl34222220.ziyu.ui.design.ZiyuButton as Button
+import io.github.xgl34222220.ziyu.ui.design.ZiyuCircularProgressIndicator as CircularProgressIndicator
+import io.github.xgl34222220.ziyu.ui.design.ZiyuIcon as Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuOutlinedButton as OutlinedButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuSurface as Surface
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -52,7 +52,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.xgl34222220.ziyu.ui.theme.LocalDockContentPadding
-import io.github.xgl34222220.ziyu.ui.theme.LocalMiuixTokens
+import io.github.xgl34222220.ziyu.ui.theme.LocalZiyuPaletteTokens
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuLoadingSkeleton
 import io.github.xgl34222220.ziyu.ui.theme.ZiyuMotionTokens
 
@@ -154,7 +154,7 @@ internal fun GoogleFontCompatibilityPage() {
                         Text("详细原理与影响范围", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Text(
                             if (detailsExpanded) "收起技术说明" else "需要时再展开，不影响正常操作",
-                            color = LocalMiuixTokens.current.textSecondary,
+                            color = LocalZiyuPaletteTokens.current.textSecondary,
                             fontSize = 12.sp,
                         )
                     }
@@ -243,7 +243,7 @@ private fun GoogleStepCard(number: String, title: String, body: String) {
 @Composable
 private fun GoogleCompatibilityCard(title: String, content: @Composable () -> Unit) {
     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
-        color = LocalMiuixTokens.current.cardBackground, shadowElevation = ZiyuLayoutTokens.CardElevation) {
+        color = LocalZiyuPaletteTokens.current.cardBackground, shadowElevation = ZiyuLayoutTokens.CardElevation) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(title, fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold)
             content()
@@ -253,5 +253,5 @@ private fun GoogleCompatibilityCard(title: String, content: @Composable () -> Un
 
 @Composable
 private fun GoogleCompatibilityText(text: String) {
-    Text(text, color = LocalMiuixTokens.current.textSecondary, fontSize = 14.sp, lineHeight = 22.sp)
+    Text(text, color = LocalZiyuPaletteTokens.current.textSecondary, fontSize = 14.sp, lineHeight = 22.sp)
 }

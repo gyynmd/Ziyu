@@ -10,11 +10,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
+import io.github.xgl34222220.ziyu.ui.design.ZiyuAlertDialog as AlertDialog
+import io.github.xgl34222220.ziyu.ui.design.ZiyuRadioButton as RadioButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuTextButton as TextButton
+import io.github.xgl34222220.ziyu.ui.design.ZiyuText as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -109,65 +108,65 @@ fun HomeRoute(
         }
     }
 
-    HomeScreenCompact(
-        style = style,
-        state = state,
-        actions = visibleActions,
-        trustContent = {
-            if (state.moduleInstalled) {
-                Column(Modifier.fillMaxWidth()) {
-                    OutlinedButton(onClick = { actions.mountSettings(); showMountSettings = true }, enabled = !state.taskRunning, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (state.mountPreferenceLoaded) "挂载方式：${mountModeLabel(state.mountBackendPreference)}" else "挂载方式：读取中…")
-                    }
-                    if (state.taskRunning) {
-                        OutlinedButton(onClick = actions.cancelTask, modifier = Modifier.fillMaxWidth()) { Text("终止当前字体任务") }
-                    }
-                    if (state.undoAvailable) {
-                        OutlinedButton(onClick = { showUndo = true }, enabled = !state.taskRunning, modifier = Modifier.fillMaxWidth()) { Text("撤销上一次字体应用") }
-                    }
-                    DeviceTrustChip(
-                        style = style,
-                        state = trustState,
-                        onClick = { showTrustDetails = true },
-                    )
-                    Spacer(Modifier.height(7.dp))
-                    OutlinedButton(
-                        onClick = {
-                            if (stockScanBusy) return@OutlinedButton
-                            stockScanBusy = true
-                            stockScanMessage = "正在扫描设备原厂字体…"
-                            stockScanError = false
-                            scope.launch {
-                                val result = RootShell.exec(STOCK_SCAN_COMMAND, timeoutMs = 180_000L)
-                                stockScanMessage = stockScanResultMessage(result.stdout, result.stderr, result.code)
-                                stockScanError = result.code != 0 || stockScanMessage.contains("失败") || stockScanMessage.contains("无法")
-                                stockScanBusy = false
-                                if (!stockScanError) {
-                                    actions.refresh()
-                                    trustRefreshGeneration += 1
-                                }
+    val trustContent: @Composable () -> Unit = {
+        if (state.moduleInstalled) {
+            Column(Modifier.fillMaxWidth()) {
+                TextButton(onClick = { actions.mountSettings(); showMountSettings = true }, enabled = !state.taskRunning, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (state.mountPreferenceLoaded) "挂载方式：${mountModeLabel(state.mountBackendPreference)}" else "挂载方式：读取中…")
+                }
+                if (state.taskRunning) {
+                    TextButton(onClick = actions.cancelTask, modifier = Modifier.fillMaxWidth()) { Text("终止当前字体任务") }
+                }
+                if (state.undoAvailable) {
+                    TextButton(onClick = { showUndo = true }, enabled = !state.taskRunning, modifier = Modifier.fillMaxWidth()) { Text("撤销上一次字体应用") }
+                }
+                DeviceTrustChip(
+                    style = style,
+                    state = trustState,
+                    onClick = { showTrustDetails = true },
+                )
+                Spacer(Modifier.height(7.dp))
+                TextButton(
+                    onClick = {
+                        if (stockScanBusy) return@TextButton
+                        stockScanBusy = true
+                        stockScanMessage = "正在扫描设备原厂字体…"
+                        stockScanError = false
+                        scope.launch {
+                            val result = RootShell.exec(STOCK_SCAN_COMMAND, timeoutMs = 180_000L)
+                            stockScanMessage = stockScanResultMessage(result.stdout, result.stderr, result.code)
+                            stockScanError = result.code != 0 || stockScanMessage.contains("失败") || stockScanMessage.contains("无法")
+                            stockScanBusy = false
+                            if (!stockScanError) {
+                                actions.refresh()
+                                trustRefreshGeneration += 1
                             }
-                        },
-                        enabled = !stockScanBusy && !state.taskRunning,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            if (stockScanBusy) "正在扫描原厂字体…" else "重新扫描原厂字体",
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                    if (stockScanMessage.isNotBlank()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            stockScanMessage,
-                            color = if (stockScanError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                        )
-                    }
+                        }
+                    },
+                    enabled = !stockScanBusy && !state.taskRunning,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        if (stockScanBusy) "正在扫描原厂字体…" else "重新扫描原厂字体",
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                if (stockScanMessage.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        stockScanMessage,
+                        color = if (stockScanError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                    )
                 }
             }
-        },
-    )
+        }
+    }
+    when (style) {
+        UiStyle.MATERIAL -> HomeScreenMaterial(state, visibleActions, trustContent)
+        UiStyle.MIUIX -> HomeScreenMiuix(state, visibleActions, trustContent)
+        UiStyle.COUI -> HomeScreenCoui(state, visibleActions, trustContent)
+    }
 
     if (showMountSettings) {
         AlertDialog(
