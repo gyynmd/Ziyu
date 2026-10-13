@@ -60,6 +60,8 @@ def fixture(metrics: dict) -> dict:
 
 class StockMetricContractTest(unittest.TestCase):
     def setUp(self) -> None:
+        scanner._property_rom_kind.cache_clear()
+        self.addCleanup(scanner._property_rom_kind.cache_clear)
         self.temp = tempfile.TemporaryDirectory(prefix="luoshu-stock-metrics-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -374,6 +376,7 @@ class StockMetricContractTest(unittest.TestCase):
 
         with mock.patch.object(inventory, "_getprop", side_effect=fake_getprop), \
              mock.patch.dict(scanner.os.environ, {"LUOSHU_STOCK_VIEW_VERIFIED": "1"}):
+            scanner._property_rom_kind.cache_clear()
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(scanner.scan(args), 0)
         refreshed = json.loads(args.output.read_text(encoding="utf-8"))
