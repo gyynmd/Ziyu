@@ -24,6 +24,7 @@ class LegacyMultiweightWorkerTest(unittest.TestCase):
             module = root / "module"
             (module / "config").mkdir(parents=True)
             (module / "common").mkdir()
+            shutil.copyfile(ROOT / "common/composite_tune.sh", module / "common/composite_tune.sh")
             router = module / "common/legacy_v14_4/mix_router.sh"
             router.parent.mkdir(parents=True)
             router.write_text('#!/bin/sh\n[ "${1:-}" = finalize ] || exit 2\nexit 0\n', encoding="utf-8")

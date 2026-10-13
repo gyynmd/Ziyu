@@ -25,6 +25,7 @@ class MixWorkflowTest(unittest.TestCase):
             root = Path(directory)
             module = root / "module"
             (module / "common").mkdir(parents=True)
+            shutil.copyfile(ROOT / "common/composite_tune.sh", module / "common/composite_tune.sh")
             (module / "config").mkdir()
             (module / "logs").mkdir()
             stage = module / ".luoshu-mix-stage"
@@ -150,7 +151,7 @@ apply_mix SelectedCjk SelectedLatin SelectedDigits
             config.mkdir(parents=True)
             (module / "common").mkdir()
             (module / "logs").mkdir()
-            for name in ("mix_library.py", "font_structure.py"):
+            for name in ("mix_library.py", "font_structure.py", "composite_tune.sh"):
                 shutil.copyfile(ROOT / "common" / name, module / "common" / name)
             store = module / ".luoshu-mix-stage"
             store.mkdir(parents=True)
@@ -230,6 +231,8 @@ apply_mix SelectedCjk SelectedLatin SelectedDigits
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "config").mkdir()
+            (root / "common").mkdir()
+            shutil.copyfile(ROOT / "common/composite_tune.sh", root / "common/composite_tune.sh")
             (root / "config/axes_task.conf").write_text("task=axes-cancelled\nstate=cancelled\npercent=100\nmessage=组合任务已取消\n")
             shell = shutil.which("bash") or r"C:\Program Files\Git\bin\bash.exe"
             result = subprocess.run([shell, (ROOT / "common/legacy_v14_4/mix_router.sh").as_posix(),

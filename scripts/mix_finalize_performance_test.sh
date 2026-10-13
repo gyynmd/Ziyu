@@ -61,7 +61,7 @@ no grep -q '_luoshu_config_make_mono_weight' "$ROOT/common/font_finalize_hotfix.
 
 # Selected generation finishes at a reusable library artifact and preserves the
 # base engine's content cache, without constructing mount/manifest transactions.
-ok grep -q 'full-composite-v7' "$ROOT/common/legacy_v14_4/font_mix_engine.sh"
+ok grep -q 'full-composite-v8' "$ROOT/common/legacy_v14_4/font_mix_engine.sh"
 ok grep -q 'LUOSHU_MIX_PREPARE_ONLY' "$ROOT/common/legacy_v14_4/font_mix_engine.sh"
 ok grep -q 'publish_named_mix' "$ROOT/common/legacy_v14_4/mix_router.sh"
 ok grep -q '正在保存组合到字体库' "$ROOT/common/legacy_v14_4/v142_weighted_mix.sh"

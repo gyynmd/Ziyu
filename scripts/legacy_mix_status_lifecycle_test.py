@@ -22,6 +22,7 @@ class MixStatusLifecycleTest(unittest.TestCase):
         self.config.mkdir(parents=True)
         (self.module / 'common').mkdir()
         shutil.copyfile(ROOT / 'common/background_task.sh', self.module / 'common/background_task.sh')
+        shutil.copyfile(ROOT / 'common/composite_tune.sh', self.module / 'common/composite_tune.sh')
         self.task_file = self.config / 'axes_task.conf'
         self.boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
         self.env = {**os.environ, 'MODDIR': str(self.module)}
