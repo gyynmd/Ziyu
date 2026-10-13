@@ -54,7 +54,7 @@ hook post-mount available hybrid-mount pass
 
 pref get > "$TMP/status"
 assert_json '"preferredBackend":"auto"' "$TMP/status" 'legacy preference was not reported as automatic'
-assert_json '"bootNomountObserved":true' "$TMP/status" 'current-boot capability observation was not reported'
+assert_json '"bootNomountObserved":false' "$TMP/status" 'NoMount capability was reported despite no current-boot NoMount probe'
 assert_json '"bootNomountKernelUsable":false' "$TMP/status" 'current-boot NoMount capability was not reported'
 assert_json '"selectedBackend":"external"' "$TMP/status" 'status did not expose the active provider choice'
 
