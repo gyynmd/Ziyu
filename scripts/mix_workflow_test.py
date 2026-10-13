@@ -141,7 +141,15 @@ apply_mix SelectedCjk SelectedLatin SelectedDigits
                 self.assertNotIn("fvar", font)
                 for role, char in (("cjk", "中"), ("latin", "A"), ("digit", "1")):
                     with TTFont(prepared[role]) as selected:
-                        self.assertEqual(bounds(font, char), bounds(selected, char))
+                        selected_bounds = bounds(selected, char)
+                        # This fixture's ideographs start at y=0 (unlike a normal
+                        # 8%-below-baseline CJK box), so the shared layout policy
+                        # moves imported ASCII up by its bounded +56-unit correction.
+                        expected_shift = 56 if role != "cjk" else 0
+                        actual_bounds = bounds(font, char)
+                        self.assertEqual(actual_bounds,
+                                         (selected_bounds[0], selected_bounds[1] + expected_shift,
+                                          selected_bounds[2], selected_bounds[3] + expected_shift))
 
     def test_router_only_reports_success_after_named_library_is_saved(self):
         with tempfile.TemporaryDirectory() as directory:
