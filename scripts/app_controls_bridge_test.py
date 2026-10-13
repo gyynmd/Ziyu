@@ -16,7 +16,7 @@ class AppControlsBridgeTest(unittest.TestCase):
             module = Path(directory)
             (module/'common').mkdir()
             (module/'config').mkdir()
-            for name in ('app_bridge.sh', 'mount_backend_preferences.sh', 'mount_backend_details.sh', 'root_manager_detection.sh', 'meta_mount_detection.sh', 'action_control.sh', 'action_control.py', 'log_review.sh'):
+            for name in ('app_bridge.sh', 'mount_backend_preferences.sh', 'mount_backend_state.sh', 'mount_backend_details.sh', 'root_manager_detection.sh', 'meta_mount_detection.sh', 'action_control.sh', 'action_control.py', 'log_review.sh'):
                 shutil.copy2(ROOT/'common'/name, module/'common'/name)
             (module/'module.prop').write_text('id=LuoShu\n')
             env = dict(os.environ, MODDIR=str(module), LUOSHU_PYTHON=sys.executable)
