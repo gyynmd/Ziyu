@@ -41,6 +41,8 @@ on:
       - 'scripts/mix_workflow_test.py'
       - 'scripts/legacy_mix_34_progress_test.sh'
       - 'scripts/mix_finalize_performance_test.sh'
+      - 'scripts/font_metrics_normalization_test.py'
+      - 'scripts/legacy_composite_layout_test.py'
       - 'scripts/stock_inventory_scan_wrapper_test.py'
       - 'scripts/legacy_multiweight_worker_test.py'
       - 'scripts/app_controls_bridge_test.py'

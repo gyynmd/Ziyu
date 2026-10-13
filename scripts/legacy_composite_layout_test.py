@@ -132,7 +132,8 @@ class LegacyCompositeLayoutTest(unittest.TestCase):
         font = self.build(runtime=True)
         for char in 'HIE147':
             self.assertLessEqual(abs(bounds(font, char)[1]), 1, char)
-            self.assertTrue(650 <= bounds(font, char)[3] <= 750, char)
+            # 700-unit base ASCII is enlarged by the bounded 18% CJK correction.
+            self.assertLessEqual(abs(bounds(font, char)[3] - 826), 1, char)
 
     def test_new_accent_ink_is_enclosed_by_global_bounds(self):
         font = self.build()
@@ -164,7 +165,7 @@ class LegacyCompositeLayoutTest(unittest.TestCase):
         font = self.build()
         for char in 'H147':
             self.assertLessEqual(abs(bounds(font, char)[1]), 1, char)
-            self.assertTrue(650 <= bounds(font, char)[3] <= 750, char)
+            self.assertLessEqual(abs(bounds(font, char)[3] - 826), 1, char)
         self.assertGreaterEqual(font['head'].yMax, bounds(font, 'À')[3])
 
     def assert_static_imports_keep_cjk_variations(self, explicit, current=False):
@@ -230,7 +231,10 @@ class LegacyCompositeLayoutTest(unittest.TestCase):
                     for char in 'A1中':
                         freetype.check(api.FT_Load_Char(face, ord(char), 1 | 2 | 8),
                                        'read unscaled variable glyph advance')
-                        expected = 920 if weight == 900 and (path == self.base or char == '中') else 620
+                        if path == self.output and char != '中':
+                            expected = 732  # round(620 * 1.18), static at both weights
+                        else:
+                            expected = 920 if weight == 900 else 620
                         self.assertEqual(face.contents.glyph.contents.metrics.horiAdvance, expected)
             finally:
                 freetype.check(api.FT_Done_Face(face), 'close variable composite')

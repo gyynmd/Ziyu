@@ -186,9 +186,11 @@ with tempfile.TemporaryDirectory() as directory:
     try:
         a = bounds(composite, "A"); one = bounds(composite, "1")
         assert abs(a[1]) <= 20, a
-        assert 650 <= a[3] - a[1] <= 760, a
+        # This fixture has unusually small ASCII (700) beside a 960-unit CJK
+        # box. The shared CJK sizing policy caps enlargement at 18%: 826.
+        assert abs((a[3] - a[1]) - 826) <= 1, a
         assert abs(one[1]) <= 20, one
-        assert 650 <= one[3] - one[1] <= 760, one
+        assert abs((one[3] - one[1]) - 826) <= 1, one
         assert composite["hhea"].lineGap == 0
         assert composite["OS/2"].fsSelection & (1 << 7)
     finally:
