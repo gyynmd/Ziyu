@@ -28,9 +28,11 @@ sh "$ROOT/scripts/check.sh"
 
 APP_PACKAGE="${LUOSHU_APP_PACKAGE:-}"
 APP_VERSION_CODE="${LUOSHU_APP_VERSION_CODE:-}"
+APP_VERSION_NAME="${LUOSHU_APP_VERSION_NAME:-}"
 if command -v apkanalyzer >/dev/null 2>&1; then
   [ -n "$APP_PACKAGE" ] || APP_PACKAGE=$(apkanalyzer manifest application-id "$APP_APK" 2>/dev/null || true)
   [ -n "$APP_VERSION_CODE" ] || APP_VERSION_CODE=$(apkanalyzer manifest version-code "$APP_APK" 2>/dev/null || true)
+  [ -n "$APP_VERSION_NAME" ] || APP_VERSION_NAME=$(apkanalyzer manifest version-name "$APP_APK" 2>/dev/null || true)
 fi
 [ -n "$APP_PACKAGE" ] || {
   echo 'Unable to read APK package name. Install apkanalyzer or set LUOSHU_APP_PACKAGE.' >&2
@@ -45,6 +47,10 @@ esac
 [ "$APP_VERSION_CODE" -eq "$EXPECTED_VERSION_CODE" ] || {
   echo "APK versionCode mismatch: expected $EXPECTED_VERSION_CODE, got $APP_VERSION_CODE" >&2
   exit 67
+}
+[ -n "$APP_VERSION_NAME" ] || {
+  echo 'Unable to read APK versionName. Install apkanalyzer or set LUOSHU_APP_VERSION_NAME.' >&2
+  exit 66
 }
 case "$APP_PACKAGE" in
   io.github.shishui611_art.ziyu)
@@ -79,7 +85,7 @@ APP_SHA256=$(sha256sum "$STAGE/bundled/Ziyu-App.apk" | awk '{print $1}')
 {
   printf 'package=%s\n' "$APP_PACKAGE"
   printf 'versionCode=%s\n' "$APP_VERSION_CODE"
-  printf 'versionName=%s\n' "$LUOSHU_VERSION"
+  printf 'versionName=%s\n' "$APP_VERSION_NAME"
   printf 'sha256=%s\n' "$APP_SHA256"
 } > "$STAGE/bundled/app.prop"
 chmod 0644 "$STAGE/bundled/Ziyu-App.apk" "$STAGE/bundled/app.prop"
@@ -115,6 +121,7 @@ test -s "$STAGE/bundled/Ziyu-App.apk"
 test -s "$STAGE/bundled/app.prop"
 grep -qx "package=$APP_PACKAGE" "$STAGE/bundled/app.prop"
 grep -qx "versionCode=$EXPECTED_VERSION_CODE" "$STAGE/bundled/app.prop"
+grep -Fxq "versionName=$APP_VERSION_NAME" "$STAGE/bundled/app.prop"
 grep -Eq '^sha256=[0-9a-f]{64}$' "$STAGE/bundled/app.prop"
 
 # Final payload gate: obsolete or WebUI paths must never return.
