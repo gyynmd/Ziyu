@@ -216,7 +216,9 @@ assert_eq "$(state "$M14" selected_backend)" self 'case 14 selects self after pu
 assert_eq "$(state "$M14" active_backend)" none 'case 14 waits for the KernelSU mount phase'
 assert_eq "$(state "$M14" fallback_used)" 1 'case 14 records the automatic fallback'
 [ ! -f "$M14/config/test-self-mounted" ] || fail 'case 14 mounted before the KernelSU mount phase'
-expect_hook_failure "$M14" KernelSU 1 fail post-mount hybrid-mount
+# Test mode skips physical-payload validation, so model the missing payload by
+# making the self-mount operation itself fail.
+LUOSHU_BACKEND_TEST_SELF_RC=1 expect_hook_failure "$M14" KernelSU 1 fail post-mount hybrid-mount
 assert_eq "$(state "$M14" verification)" failed 'case 14 remains failed when the self payload is unavailable'
 [ ! -f "$M14/config/test-self-mounted" ] || fail 'case 14 mounted without a verified payload'
 
