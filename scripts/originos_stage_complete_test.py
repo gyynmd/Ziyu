@@ -14,6 +14,7 @@ from fontTools.ttLib import TTFont
 from coloros_metrics_batch_test import font_file, stock
 import originos_stage_complete as batch
 from font_route_verify import physical_roles
+from font_inventory import InventoryError
 
 
 class OriginOSStageTest(unittest.TestCase):
@@ -37,9 +38,18 @@ class OriginOSStageTest(unittest.TestCase):
         entries = {logical: {'path': logical, 'source': 'verified-scan',
                              'format': 'TTF', 'style': 'normal', **metrics}
                    for logical, metrics in slots.items()}
+        # Model the complete scanner schema, including validated glyph bounds.
+        with TTFont(self.donor) as font:
+            bounds = {key: getattr(font['head'], key)
+                      for key in ('xMin', 'yMin', 'xMax', 'yMax')}
+        for entry in entries.values():
+            entry['metrics']['head'].update(bounds)
+        main_path = next(iter(entries))
         (self.module / 'config/device_font_inventory.json').write_text(json.dumps({
             'schema': 'device-font-inventory-v1', 'inventoryRevision': 1,
-            'state': 'ready', 'buildKey': build, 'slots': entries}))
+            'state': 'ready', 'buildKey': build, 'slots': entries,
+            'slotCount': len(entries), 'mainSlotPath': main_path,
+            'mainSlot': entries[main_path]}), encoding='utf-8')
 
     def test_completes_only_inventoried_chinese_slots_and_keeps_donor(self):
         logical = '/system/fonts/DroidSansFallbackBBK.ttf'
@@ -65,7 +75,7 @@ class OriginOSStageTest(unittest.TestCase):
 
     def test_invalid_stock_metrics_fail_before_adding_targets(self):
         self.inventory({'/system/fonts/DroidSansFallbackBBK.ttf': stock(ascent=-1)})
-        with self.assertRaises(ValueError):
+        with self.assertRaises(InventoryError):
             batch.build(self.module, self.stage)
         self.assertFalse((self.stage / 'system/fonts/DroidSansFallbackBBK.ttf').exists())
 
