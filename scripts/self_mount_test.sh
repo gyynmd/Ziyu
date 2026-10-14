@@ -12,6 +12,9 @@ PRIVATE_STATE="$TMP/private-state"
 FAKE_MOUNT="$TMP/fake-mount.sh"
 FAKE_UMOUNT="$TMP/fake-umount.sh"
 MOUNTINFO="$TMP/mounts"
+PROC_MOUNTINFO="$TMP/proc-mountinfo"
+FAKE_BIN="$TMP/fake-bin"
+REAL_CAT=$(command -v cat)
 mkdir -p \
     "$MODULE/system/fonts" \
     "$MODULE/system/etc/luoshu" \
@@ -31,22 +34,68 @@ printf 'id=LuoShu\nfont=Demo\nengine=self-mount\npartition=system\nnonce=test-sy
 printf 'system|test-system|/system/etc/luoshu/mount-probe.conf\n' \
     > "$MODULE/config/mount-probes-expected.conf"
 : > "$MOUNTINFO"
+: > "$PROC_MOUNTINFO"
+printf '1 0 0:1 / / rw - ext4 rootfs rw\n' > "$PROC_MOUNTINFO"
+mkdir -p "$FAKE_BIN"
+cat > "$FAKE_BIN/cat" <<EOF_FAKE_CAT
+#!/bin/sh
+if [ "\$#" -eq 1 ] && [ "\$1" = /proc/sys/kernel/random/boot_id ]; then
+    printf 'test-system\\n'
+    exit 0
+fi
+exec "$REAL_CAT" "\$@"
+EOF_FAKE_CAT
+chmod 0755 "$FAKE_BIN/cat"
 
 cat > "$FAKE_MOUNT" <<'EOF_FAKE_MOUNT'
 #!/bin/sh
 set -eu
 mountinfo=${LUOSHU_TEST_MOUNTINFO:?}
+proc_mountinfo=${LUOSHU_TEST_KERNEL_MOUNTINFO:?}
+add_mountinfo() {
+    source="$1"
+    target="$2"
+    filesystem="${3:-ext4}"
+    options="${4:-rw}"
+    super_options="${5:-$options}"
+    mount_id=$(awk 'BEGIN { max=99 } $1 > max { max=$1 } END { print max + 1 }' "$proc_mountinfo")
+    printf '%s 1 0:1 / %s %s - %s %s %s\n' \
+        "$mount_id" \
+        "$target" "$options" "$filesystem" "$source" "$super_options" >> "$proc_mountinfo"
+}
+remount_readonly() {
+    target="$1"
+    tmp="${proc_mountinfo}.tmp.$$"
+    awk -v target="$target" 'BEGIN { OFS=" " } $5 == target { $6="ro" } { print }' \
+        "$proc_mountinfo" > "$tmp"
+    mv -f "$tmp" "$proc_mountinfo"
+}
+if [ "$1" = --make-private ]; then
+    exit 0
+fi
 case "$1" in
     -o)
-        [ "$2" = bind ]
-        src="$3"
-        dst="$4"
-        backup="${dst}.luoshu-test-stock"
-        rm -rf "$backup"
-        if [ -d "$dst" ]; then mv "$dst" "$backup"; else mkdir -p "$backup"; fi
-        mkdir -p "$dst"
-        cp -a "$src/." "$dst/"
-        printf 'bind %s %s %s\n' "$src" "$dst" "$backup" >> "$mountinfo"
+        case "$2" in
+            bind)
+                src="$3"
+                dst="$4"
+                backup="${dst}.luoshu-test-stock"
+                rm -rf "$backup"
+                if [ -d "$dst" ]; then mv "$dst" "$backup"; else mkdir -p "$backup"; fi
+                mkdir -p "$dst"
+                cp -a "$src/." "$dst/"
+                printf 'bind %s %s %s\n' "$src" "$dst" "$backup" >> "$mountinfo"
+                add_mountinfo "$src" "$dst" ext4 rw
+                ;;
+            private)
+                [ "$3" = -t ] && [ "$4" = none ] && [ "$5" = none ]
+                [ -n "$6" ]
+                ;;
+            remount,bind,ro)
+                remount_readonly "$3"
+                ;;
+            *) exit 2 ;;
+        esac
         ;;
     -t)
         [ "$2" = overlay ]
@@ -54,7 +103,7 @@ case "$1" in
         [ "$4" = -o ]
         opts="$5"
         target="$6"
-        layers=$(printf '%s' "$opts" | sed -n 's/^lowerdir=//p')
+        layers=$(printf '%s' "$opts" | tr ',' '\n' | sed -n 's/^lowerdir=//p')
         source=${layers%%:*}
         stock=${layers#*:}
         backup="${target}.luoshu-test-stock"
@@ -64,6 +113,7 @@ case "$1" in
         cp -a "$stock/." "$target/"
         cp -a "$source/." "$target/"
         printf 'overlay %s %s %s\n' "$source" "$target" "$backup" >> "$mountinfo"
+        add_mountinfo overlay "$target" overlay ro "$opts"
         ;;
     *) exit 2 ;;
 esac
@@ -76,6 +126,14 @@ target="$1"
 backup="${target}.luoshu-test-stock"
 rm -rf "$target"
 if [ -d "$backup" ]; then mv "$backup" "$target"; else mkdir -p "$target"; fi
+proc_mountinfo=${LUOSHU_TEST_KERNEL_MOUNTINFO:?}
+tmp="${proc_mountinfo}.tmp.$$"
+awk -v target="$target" '$5 != target { print }' "$proc_mountinfo" > "$tmp"
+mv -f "$tmp" "$proc_mountinfo"
+mountinfo=${LUOSHU_TEST_MOUNTINFO:?}
+tmp="${mountinfo}.tmp.$$"
+awk -v target="$target" '$3 != target { print }' "$mountinfo" > "$tmp"
+mv -f "$tmp" "$mountinfo"
 EOF_FAKE_UMOUNT
 chmod 0755 "$FAKE_MOUNT" "$FAKE_UMOUNT"
 
@@ -112,9 +170,13 @@ sh -c '
 MODDIR="$MODULE" MODULE_DIR="$MODULE" LUOSHU_MOUNT_MODDIR="$MODULE" \
 LUOSHU_SELF_MOUNT_VISIBLE_ROOT="$VISIBLE" \
 LUOSHU_SELF_MOUNT_STATE_ROOT="$STATE" \
+LUOSHU_SELF_MOUNTINFO="$PROC_MOUNTINFO" \
+LUOSHU_PID1_MOUNTINFO="$PROC_MOUNTINFO" \
+LUOSHU_TEST_KERNEL_MOUNTINFO="$PROC_MOUNTINFO" \
 LUOSHU_SELF_PID1_ROOT=/ \
 LUOSHU_SELF_MOUNT_COMMAND="$FAKE_MOUNT" \
 LUOSHU_SELF_UMOUNT_COMMAND="$FAKE_UMOUNT" \
+PATH="$FAKE_BIN:$PATH" \
 LUOSHU_PRIVATE_STATE_ROOT="$PRIVATE_STATE" \
 LUOSHU_PRIVATE_MOUNTINFO="$MOUNTINFO" \
 LUOSHU_BACKEND_TEST_BOOT_ID=test-system \
@@ -131,6 +193,7 @@ sh -c '
     . "$MODDIR/common/mount_compat.sh"
     . "$MODDIR/common/mount_self_backend.sh"
     set -eu
+    _luoshu_atomic_boot_id() { printf "test-system\n"; }
 
     touch "$MODDIR/mount_error"
     luoshu_private_self_mount_ensure
@@ -141,10 +204,15 @@ sh -c '
     [ "$(sed -n "s/^backend=//p" "$MODDIR/config/self-mount.conf")" = self-overlay ]
     [ "$(cat "$LUOSHU_SELF_MOUNT_VISIBLE_ROOT/system/fonts/Roboto-Regular.ttf")" = new-font ]
     [ "$(cat "$LUOSHU_SELF_MOUNT_VISIBLE_ROOT/system/fonts/NotoColorEmoji.ttf")" = stock-emoji ]
+    grep -F " / $LUOSHU_SELF_MOUNT_VISIBLE_ROOT/system/fonts ro - overlay overlay " "$LUOSHU_SELF_MOUNTINFO"
+    grep -F " / $LUOSHU_SELF_MOUNT_STATE_ROOT/lower/system-fonts rw - ext4 " "$LUOSHU_SELF_MOUNTINFO"
+    ! grep -F " / $LUOSHU_SELF_MOUNT_STATE_ROOT/lower/system-fonts rw - ext4 " \
+        "$LUOSHU_SELF_MOUNTINFO" | grep -E "shared|master|propagate_from:"
     _luoshu_atomic_verify_manifest "$MODDIR/config/self-mount-required.conf"
     mount_list="$LUOSHU_SELF_MOUNT_STATE_ROOT/mounts.list"
     [ -s "$mount_list" ]
     before=$(wc -l < "$mount_list" | tr -d "[:space:]")
+    before_info=$(wc -l < "$LUOSHU_SELF_MOUNTINFO" | tr -d "[:space:]")
     case "$before" in ""|*[!0-9]*) exit 1 ;; esac
     [ "$before" -gt 0 ]
 
@@ -153,9 +221,16 @@ sh -c '
     [ "$(sed -n "s/^backend=//p" "$MODDIR/config/self-mount.conf")" = self-overlay ]
     _luoshu_atomic_verify_manifest "$MODDIR/config/self-mount-required.conf"
     after=$(wc -l < "$mount_list" | tr -d "[:space:]")
+    after_info=$(wc -l < "$LUOSHU_SELF_MOUNTINFO" | tr -d "[:space:]")
     case "$after" in ""|*[!0-9]*) exit 1 ;; esac
     [ "$after" -gt 0 ]
     [ "$before" = "$after" ]
+    [ "$before_info" = "$after_info" ]
+    "$LUOSHU_SELF_UMOUNT_COMMAND" "$LUOSHU_SELF_MOUNT_VISIBLE_ROOT/system/fonts"
+    ! grep -F " / $LUOSHU_SELF_MOUNT_VISIBLE_ROOT/system/fonts " "$LUOSHU_SELF_MOUNTINFO"
+    ! grep -F " $LUOSHU_SELF_MOUNT_VISIBLE_ROOT/system/fonts " "$LUOSHU_TEST_MOUNTINFO"
+    [ "$(cat "$LUOSHU_SELF_MOUNT_VISIBLE_ROOT/system/fonts/Roboto-Regular.ttf")" = stock-font ]
+    [ "$(cat "$LUOSHU_SELF_MOUNT_VISIBLE_ROOT/system/fonts/NotoColorEmoji.ttf")" = stock-emoji ]
 ' sh "$ROOT"
 
 # APatch and KernelSU-family managers must wait until their native OverlayFS
@@ -187,6 +262,9 @@ cp "$ROOT/common/private_payload.sh" "$STAGE_MODULE/common/private_payload.sh"
 cp "$ROOT/common/font_live_switch.sh" "$STAGE_MODULE/common/font_live_switch.sh"
 cp "$ROOT/common/font_live_state.sh" "$STAGE_MODULE/common/font_live_state.sh"
 cp "$ROOT/common/font_switch_lock.sh" "$STAGE_MODULE/common/font_switch_lock.sh"
+cp "$ROOT/common/font_next_transaction.sh" "$STAGE_MODULE/common/font_next_transaction.sh"
+cp "$ROOT/common/next_boot_payload.sh" "$STAGE_MODULE/common/next_boot_payload.sh"
+cp "$ROOT/common/action_control.sh" "$STAGE_MODULE/common/action_control.sh"
 cp "$ROOT/common/skip_mount_ownership.sh" "$STAGE_MODULE/common/skip_mount_ownership.sh"
 cp "$ROOT/common/mount_nomount_backend.sh" "$STAGE_MODULE/common/mount_nomount_backend.sh"
 cp "$ROOT/common/mount_backend_preferences.sh" "$STAGE_MODULE/common/mount_backend_preferences.sh"
@@ -202,7 +280,10 @@ exit 0
 EOF_BOOT_STAGE
 
 : >"$STAGE_LOG"
+: > "$PROC_MOUNTINFO"
 LUOSHU_STAGE_LOG="$STAGE_LOG" LUOSHU_TEST_ROOT_MANAGER=APatch \
+LUOSHU_SELF_MOUNTINFO="$PROC_MOUNTINFO" LUOSHU_PID1_MOUNTINFO="$PROC_MOUNTINFO" \
+PATH="$FAKE_BIN:$PATH" \
 LUOSHU_BACKEND_TEST_BOOT_ID=test-system \
 LUOSHU_BACKEND_TEST_MODE=1 LUOSHU_BACKEND_TEST_MANAGER=APatch \
 sh "$STAGE_MODULE/post-fs-data.sh"
@@ -211,6 +292,8 @@ test ! -s "$STAGE_LOG"
 
 : >"$STAGE_LOG"
 LUOSHU_STAGE_LOG="$STAGE_LOG" LUOSHU_TEST_ROOT_MANAGER=Magisk \
+LUOSHU_SELF_MOUNTINFO="$PROC_MOUNTINFO" LUOSHU_PID1_MOUNTINFO="$PROC_MOUNTINFO" \
+PATH="$FAKE_BIN:$PATH" \
 LUOSHU_BACKEND_TEST_BOOT_ID=magisk-test \
 LUOSHU_BACKEND_TEST_MODE=1 LUOSHU_BACKEND_TEST_MANAGER=Magisk \
 sh "$STAGE_MODULE/post-fs-data.sh"
