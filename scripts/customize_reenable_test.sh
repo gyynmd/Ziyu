@@ -8,7 +8,9 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 OLD="$TMP/active/LuoShu"
 NEW="$TMP/update/LuoShu"
 mkdir -p "$OLD/config" "$NEW/config" "$NEW/common"
-cp "$ROOT/common/install_ui.sh" "$ROOT/common/mount_backend_preferences.sh" "$NEW/common/"
+cp "$ROOT/common/install_ui.sh" "$ROOT/common/mount_backend_preferences.sh" \
+    "$ROOT/common/apatch_boot_prepare.sh" "$ROOT/common/root_manager_detection.sh" \
+    "$NEW/common/"
 printf 'id=LuoShu\nversion=v2.0.2\nversionCode=20002\n' > "$NEW/module.prop"
 touch "$OLD/disable" "$NEW/disable"
 printf '2\n' > "$OLD/config/font-boot-failures"
