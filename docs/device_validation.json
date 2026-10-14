@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updatedAt": null,
+  "updatedAt": "2026-10-14",
   "devices": [
     {
       "id": "coloros16-kernelsu",
@@ -32,7 +32,9 @@
       "rootManager": "APatch",
       "status": "pending",
       "testedAt": null,
-      "evidence": []
+      "evidence": [
+        "部分观察（不构成矩阵通过）：2026-10-14，OnePlus PJZ110 / Android 17 API 37，APatch 115357（a843c526）与 NoMount v2.1.0（500）。v1.4.1 modules_update 升级首次启动及再次应用同一字体后的完整重启成功；扫描前回执为 prepared，14 个 PID 1 字体目标内容和路由验证通过，active_backend=external、fallback_used=0、recentErrorCount=0。未覆盖另一字体、恢复默认、各应用实际显示、卸载或其他设备组合。"
+      ]
     }
   ]
 }

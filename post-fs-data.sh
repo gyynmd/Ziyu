@@ -5,6 +5,19 @@ MODDIR="${0%/*}"
 MODULE_DIR="$MODDIR"
 mkdir -p "$MODDIR/logs" || exit 1
 
+# APatch scans providers before module post-fs-data. Its owned common hook
+# runs this preparation first, including a staged modules_update installation.
+if [ -f "$MODDIR/common/apatch_boot_prepare.sh" ]; then
+    . "$MODDIR/common/apatch_boot_prepare.sh"
+    if [ "${ZIYU_APATCH_PRE_MOUNT:-0}" = 1 ]; then
+        _zap_identity && _zap_module_safe "$MODDIR" || exit 1
+    elif ziyu_apatch_boot_ready "$MODDIR" "$(cat /proc/sys/kernel/random/boot_id | tr -d '\r\n')"; then
+        printf '[APATCH-PRE-MOUNT] reusing preparation; provider has already scanned this generation\n' >> "$MODDIR/logs/mount-backend.log"
+        MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/mount_backend_runtime.sh" hook post-fs-data
+        exit $?
+    fi
+fi
+
 _soft_stage="$MODDIR/config/temporary-root-soft-reboot.conf"
 _soft_boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null | tr -d '\r\n')
 if [ -n "$_soft_boot" ] &&
@@ -74,14 +87,20 @@ MODDIR="$MODDIR" sh "$MODDIR/common/font_live_switch.sh" retire >> "$MODDIR/logs
 if [ -s "$UNIVERSAL_NEXT_STATE" ]; then
     NEXT_BOOT_HELPER="$MODDIR/common/universal_next_boot.sh"
     [ -f "$NEXT_BOOT_HELPER" ] && . "$NEXT_BOOT_HELPER"
-    type universal_font_next_boot_activate >/dev/null 2>&1 && \
-        universal_font_next_boot_activate >/dev/null 2>&1 || true
+    type universal_font_next_boot_activate >/dev/null 2>&1 || exit 1
+    universal_font_next_boot_activate >> "$MODDIR/logs/fontswitch.log" 2>&1
+    _activation_rc=$?
 else
     NEXT_BOOT_HELPER="$MODDIR/common/next_boot_payload.sh"
     [ -f "$NEXT_BOOT_HELPER" ] && . "$NEXT_BOOT_HELPER"
-    type luoshu_next_boot_activate >/dev/null 2>&1 && \
-        luoshu_next_boot_activate >/dev/null 2>&1 || true
+    type luoshu_next_boot_activate >/dev/null 2>&1 || exit 1
+    luoshu_next_boot_activate >> "$MODDIR/logs/fontswitch.log" 2>&1
+    _activation_rc=$?
 fi
+case "$_activation_rc" in 0|2) ;; *)
+    printf '[NEXT-BOOT] activation failed rc=%s; refusing to publish a different generation\n' "$_activation_rc" >> "$MODDIR/logs/mount-backend.log"
+    exit 1 ;;
+esac
 
 RUNTIME="$MODDIR/common/mount_backend_runtime.sh"
 V4_POST_FS="$MODDIR/.luoshu-runtime/core/post-fs-data.sh"

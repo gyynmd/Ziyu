@@ -2,6 +2,7 @@
 # Standard partition payloads are migrated into .luoshu-payload during installation.
 # Root-manager hooks stay at module root; internal cores and compatibility layers live under .luoshu-runtime.
 common/app_bridge.sh
+common/apatch_boot_prepare.sh
 common/temporary_root_mode.sh
 common/soft_reboot.sh
 common/mount_provider_reload.sh

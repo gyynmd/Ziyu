@@ -75,6 +75,8 @@
 
 ## 用户字体与第三方模块
 
+`common/apatch_boot_prepare.sh` 为字域原创的 APatch 启动准备适配代码，按仓库 GPL-3.0-only 授权（完整文本见 `LICENSE` 及 `licenses/Ziyu-APatch-boot-GPL-3.0.txt`）。实现参照 APatch 的 common post-fs-data → modules_update → metamount → module post-fs-data 调度契约，未复制 APatch 或 NoMount 源码，也不接管提供者原生挂载或清理。
+
 v1.3.3 新增的 `common/font_scan_profile.py` 和 `common/stock_font_snapshot.py` 为本项目原创运行代码，按仓库 GPL-3.0-only 授权，未复制第三方模块实现。快照只在用户设备上保存该设备已验证的原厂文件，不随模块 ZIP 分发。
 
 字域不会在仓库或发布包中附带商业字体。以下内容不受字域 GPL-3.0-only 授权：

@@ -57,4 +57,7 @@ for _hybrid_cfg in \
     cat "$_hybrid_cfg.luoshu-backup" > "$_hybrid_cfg" 2>/dev/null && \
         rm -f "$_hybrid_cfg.luoshu-backup"
 done
+[ ! -f "$MODDIR/common/apatch_boot_prepare.sh" ] || {
+    . "$MODDIR/common/apatch_boot_prepare.sh" && ziyu_apatch_hook_remove
+} || exit 1
 . "$MODDIR/.luoshu-runtime/compat/v227/uninstall.sh"

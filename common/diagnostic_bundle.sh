@@ -125,6 +125,8 @@ _diag_dump_once() {
     # Config and log sections appended separately: none of these may abort the dump.
     {
         _diag_emit_file 'mount-backend.conf' "$MODDIR/config/mount-backend.conf"
+        _diag_emit_file 'APatch pre-mount preparation' "$MODDIR/config/apatch-pre-mount.conf"
+        _diag_emit_file 'NoMount native boot log' /data/adb/nomount/nomount.log 160
         _diag_emit_file 'provider publication receipt' "$MODDIR/.ziyu-state/provider-published.conf"
         _diag_emit_file 'provider reload check' "$MODDIR/config/provider-reload-check.conf"
         _diag_emit_file 'provider reload start plan' "$MODDIR/.ziyu-state/provider-reload.started"

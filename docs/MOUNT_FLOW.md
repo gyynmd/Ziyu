@@ -1,5 +1,13 @@
 # 当前字体挂载流程
 
+## APatch 的扫描前准备
+
+APatch 的 common `post-fs-data.d` 脚本先于 `modules_update` 迁移、元模块 `metamount.sh` 扫描和模块自己的 `post-fs-data.sh`。字域安装时登记自己持有的 `/data/adb/post-fs-data.d/ziyu-apatch-pre-mount.sh`，仅在确认 APatch 环境与 PID 1 挂载命名空间后执行准备。待升级时优先使用 `modules_update/LuoShu` 内的新运行代码，在管理器迁移前激活已提交字体、校验并发布普通扫描树；模块移动和 NoMount 规则加载仍由 APatch 执行。
+
+`config/apatch-pre-mount.conf` 将准备记录绑定到本次 boot ID、启动脚本和字体清单。后续模块 hook 复用该批次，不重复激活或重新发布 NoMount 已扫描的源文件。升级中的发布目录与撤销引用转换为最终模块路径；停用、删除和用户持有的排除标记仍生效。实际应用成功仍须通过 post-mount/service 的 PID 1 字体内容与路由校验。此修复不增加 NoMount 热切换能力，要求完整重启。
+
+调度依据：[APatch event.rs](https://github.com/bmax121/APatch/blob/main/apd/src/event.rs)、[APatch module.rs](https://github.com/bmax121/APatch/blob/main/apd/src/module.rs)、[NoMount v2.1.0 扫描脚本](https://github.com/maxsteeel/nomount/blob/v2.1.0/module/metamount.sh)。2026-10-14 的 OnePlus PJZ110 / Android 17（API 37）、APatch 115357、NoMount v2.1.0 诊断记录了 v1.4.1 升级后首次启动与同一字体再次应用后的完整重启成功，并验证 14 个 PID 1 字体目标；换字体、恢复默认和应用实际显示仍待测，设备矩阵保持待测。没有同条件耗时测量，不宣称实测加速。
+
 ## 当前启动的热切换
 
 v1.2.40 对已经验证的物理自挂载接入连续字体热挂载，保留本次启动确定的挂载方式。

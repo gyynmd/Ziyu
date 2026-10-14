@@ -93,5 +93,15 @@ else
     abort '缺少挂载偏好管理脚本'
     return 1 2>/dev/null || exit 1
 fi
+# Register the APatch common hook now so the first reboot after installation
+# prepares modules_update before the manager's provider scan.
+. "$MODPATH/common/apatch_boot_prepare.sh" || {
+    abort '缺少 APatch 启动准备脚本'
+    return 1 2>/dev/null || exit 1
+}
+ziyu_apatch_hook_install "$MODPATH" || {
+    abort 'APatch 启动准备入口安装失败'
+    return 1 2>/dev/null || exit 1
+}
 type luoshu_install_complete >/dev/null 2>&1 && luoshu_install_complete
 return 0 2>/dev/null || exit 0

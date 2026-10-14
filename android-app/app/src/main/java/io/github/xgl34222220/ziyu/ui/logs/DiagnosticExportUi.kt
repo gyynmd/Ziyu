@@ -147,7 +147,7 @@ internal suspend fun exportSanitizedDiagnostic(): DiagnosticExportState {
             fi
         done
         for relative in config/mount-backend.conf config/mount-backend-verification.json \
-            config/mount-backend-preference.conf config/provider-reload-check.conf \
+            config/mount-backend-preference.conf config/provider-reload-check.conf config/apatch-pre-mount.conf \
             .ziyu-state/provider-published.conf .ziyu-state/provider-reload.started config/font-payload-manifest.conf \
             config/temporary-root-soft-reboot.conf config/stock-font-snapshot/manifest.json logs/stock-font-snapshot.log \
             config/font-payload-next.conf config/font-payload-activated.conf \
@@ -187,6 +187,12 @@ internal suspend fun exportSanitizedDiagnostic(): DiagnosticExportState {
         esac
         printf '\n[mountify-scan-lock]\n' >> "${'$'}OUT"
         ls -ld /proc/1/root/dev/mountify_single_instance >> "${'$'}OUT" 2>&1
+        printf '\n[nomount-native-boot-log]\n' >> "${'$'}OUT"
+        if [ -r /data/adb/nomount/nomount.log ]; then
+            tail -n 160 /data/adb/nomount/nomount.log | tail -c 65536 >> "${'$'}OUT"
+        else
+            printf 'unavailable\n' >> "${'$'}OUT"
+        fi
         for file in /dev/mountify_logs/modules /dev/mountify_logs/mountify_mount_list; do
             printf '\n[provider-evidence:%s]\n' "${'$'}file" >> "${'$'}OUT"
             if [ -r "${'$'}file" ]; then head -c 16384 "${'$'}file" >> "${'$'}OUT"; else printf 'unavailable\n' >> "${'$'}OUT"; fi
