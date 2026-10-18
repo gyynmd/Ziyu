@@ -47,6 +47,11 @@ internal data class NativeImportNotificationSpec(
     val actions: List<NativeImportNotificationAction>,
 )
 
+internal enum class NativeImportDetachReason {
+    FOREGROUND_START_REJECTED,
+    DATA_SYNC_TIMEOUT,
+}
+
 internal fun nativeImportNotificationSpec(state: NativeImportState): NativeImportNotificationSpec {
     val actions = when {
         state.busy -> listOf(NativeImportNotificationAction.PAUSE, NativeImportNotificationAction.CANCEL)
@@ -65,15 +70,100 @@ internal fun nativeImportNotificationSpec(state: NativeImportState): NativeImpor
     )
 }
 
+internal fun nativeImportTimeoutNotice(state: NativeImportState): NativeImportState {
+    val progress = if (state.total > 0) "（已处理 ${state.processed}/${state.total}）" else ""
+    val message = when {
+        state.paused -> "系统后台导入时长已用完，队列已暂停$progress；打开字域后可继续导入"
+        state.terminal -> state.message
+        else -> "系统后台导入时长已用完$progress，当前文件完成后暂停；打开字域后可继续导入"
+    }
+    return state.copy(message = message)
+}
+
+internal fun nativeImportStartRejectedNotice(state: NativeImportState): NativeImportState {
+    val progress = if (state.total > 0) "（已处理 ${state.processed}/${state.total}）" else ""
+    val message = when {
+        state.paused -> "系统未能启动后台导入服务，队列已暂停$progress；打开字域后可继续导入"
+        state.terminal -> state.message
+        else -> "系统未能启动后台导入服务$progress，当前文件完成后暂停；打开字域后可继续导入"
+    }
+    return state.copy(message = message)
+}
+
+internal fun nativeImportDetachedNotice(
+    state: NativeImportState,
+    reason: NativeImportDetachReason?,
+): NativeImportState = when {
+    !state.paused -> state
+    reason == NativeImportDetachReason.FOREGROUND_START_REJECTED -> nativeImportStartRejectedNotice(state)
+    reason == NativeImportDetachReason.DATA_SYNC_TIMEOUT -> nativeImportTimeoutNotice(state)
+    else -> state
+}
+
 internal object NativeImportNotificationController {
-    fun start(context: Context) {
+    @Volatile
+    private var serviceExpected = false
+
+    @Volatile
+    private var serviceDetached = false
+
+    @Volatile
+    private var detachReason: NativeImportDetachReason? = null
+
+    fun isServiceExpected(): Boolean = serviceExpected
+
+    fun isServiceDetached(): Boolean = serviceDetached
+
+    fun clearServiceDetached() {
+        serviceDetached = false
+        detachReason = null
+    }
+
+    fun markServiceAttached() {
+        serviceExpected = true
+        serviceDetached = false
+        detachReason = null
+    }
+
+    fun markServiceDetached(reason: NativeImportDetachReason) {
+        serviceExpected = false
+        serviceDetached = true
+        detachReason = reason
+    }
+
+    fun markServiceStopped() {
+        serviceExpected = false
+    }
+
+    fun consumeServiceDetached(): NativeImportDetachReason? = detachReason.also {
+        serviceDetached = false
+        detachReason = null
+    }
+
+    fun start(context: Context): Boolean {
         ensureChannel(context)
-        ContextCompat.startForegroundService(context, Intent(context, NativeImportForegroundService::class.java))
+        return try {
+            ContextCompat.startForegroundService(context, Intent(context, NativeImportForegroundService::class.java))
+            serviceExpected = true
+            clearServiceDetached()
+            true
+        } catch (error: IllegalStateException) {
+            markServiceDetached(NativeImportDetachReason.FOREGROUND_START_REJECTED)
+            val application = context.applicationContext as? ZiyuApplication
+            val model = application?.nativeImportViewModel
+            model?.pauseImport()
+            val state = model?.state ?: NativeImportState()
+            notify(context, nativeImportStartRejectedNotice(state))
+            false
+        }
     }
 
     fun cancel(context: Context) {
         context.stopService(Intent(context, NativeImportForegroundService::class.java))
         notificationManager(context).cancel(IMPORT_NOTIFICATION_ID)
+        serviceExpected = false
+        serviceDetached = false
+        detachReason = null
     }
 
     fun ensureChannel(context: Context) {
@@ -164,9 +254,28 @@ internal class NativeImportForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val initial = importViewModel.state.takeIf { it.phase != NativeImportPhase.IDLE }
             ?: NativeImportState(phase = NativeImportPhase.QUEUED, message = "正在准备字体导入任务")
-        startAsForeground(initial)
+        if (!startAsForeground(initial)) {
+            NativeImportNotificationController.markServiceDetached(NativeImportDetachReason.FOREGROUND_START_REJECTED)
+            importViewModel.pauseImport()
+            NativeImportNotificationController.notify(
+                this,
+                nativeImportStartRejectedNotice(importViewModel.state),
+            )
+            stopSelfResult(startId)
+            return START_NOT_STICKY
+        }
+        NativeImportNotificationController.markServiceAttached()
         observeImportState(startId)
         return START_NOT_STICKY
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        observerJob?.cancel()
+        NativeImportNotificationController.markServiceDetached(NativeImportDetachReason.DATA_SYNC_TIMEOUT)
+        importViewModel.pauseImport()
+        NativeImportNotificationController.notify(this, nativeImportTimeoutNotice(importViewModel.state))
+        stopForeground(STOP_FOREGROUND_DETACH)
+        stopSelf()
     }
 
     private fun observeImportState(startId: Int) {
@@ -191,18 +300,24 @@ internal class NativeImportForegroundService : Service() {
         }
     }
 
-    private fun startAsForeground(state: NativeImportState) {
+    private fun startAsForeground(state: NativeImportState): Boolean {
         val notification = NativeImportNotificationController.buildNotification(this, state)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(IMPORT_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            startForeground(IMPORT_NOTIFICATION_ID, notification)
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(IMPORT_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else {
+                startForeground(IMPORT_NOTIFICATION_ID, notification)
+            }
+            true
+        } catch (_: IllegalStateException) {
+            false
         }
     }
 
     override fun onDestroy() {
         observerJob?.cancel()
         serviceScope.cancel()
+        NativeImportNotificationController.markServiceStopped()
         super.onDestroy()
     }
 
@@ -219,7 +334,9 @@ internal class NativeImportActionReceiver : BroadcastReceiver() {
             try {
                 val viewModel = application.nativeImportViewModel
                 if (action == NativeImportNotificationAction.RESUME || action == NativeImportNotificationAction.RETRY) {
-                    runCatching { NativeImportNotificationController.start(application) }
+                    val started = runCatching { NativeImportNotificationController.start(application) }
+                        .getOrDefault(false)
+                    if (!started) return@launch
                 }
                 var attempts = 0
                 while (!actionReady(action, viewModel.state) && attempts < 60) {

@@ -47,6 +47,7 @@ import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Restore
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SystemUpdate
@@ -144,6 +145,8 @@ private enum class SettingsSection(
     OVERVIEW("字域状态", "版本、Root、挂载与当前字体", Icons.Rounded.Settings, .94f),
     APPEARANCE("外观与主题", "颜色、深色模式与界面效果", Icons.Rounded.Palette, 1.00f),
     SAFETY("安全与维护", "字体加载检查、冲突与安全清理", Icons.Rounded.Security, .96f),
+    BOOT_SAFETY("开机保护", "查看保护状态与解除保护", Icons.Rounded.Security, .96f),
+    APP_COVERAGE("应用字体诊断", "按应用检查字体来源，扫描未覆盖项", Icons.Rounded.Search, .98f),
     GOOGLE("Google 字体兼容", "谷歌英数回退处理、状态与中文说明", Icons.Rounded.Build, .96f),
     BACKUP("备份与恢复", "完整备份字域数据和组合方案", Icons.Rounded.Backup, 1.08f),
     UPDATE("模块更新", "GitHub 正式版模块与更新说明", Icons.Rounded.SystemUpdate, 1.03f),
@@ -220,6 +223,8 @@ internal fun SettingsHubRoute(
                         SettingsSection.OVERVIEW -> OverviewPage(model)
                         SettingsSection.APPEARANCE -> AppearancePage(settings, actions)
                         SettingsSection.SAFETY -> SafetyPage(model, settings.uiStyle, onTemporaryRootChanged)
+                        SettingsSection.BOOT_SAFETY -> BootSafetyPage()
+                        SettingsSection.APP_COVERAGE -> UncoveredAppsPage()
                         SettingsSection.GOOGLE -> GoogleFontCompatibilityPage()
                         SettingsSection.BACKUP -> pageList { item { FullBackupCard(settings, actions) } }
                         SettingsSection.UPDATE -> UpdatePage(model)
@@ -277,6 +282,16 @@ private fun SettingsHome(
                 SettingsNavigationRow(
                     section = SettingsSection.SAFETY,
                     onClick = { onOpenSection(SettingsSection.SAFETY) },
+                )
+                SettingsDivider()
+                SettingsNavigationRow(
+                    section = SettingsSection.BOOT_SAFETY,
+                    onClick = { onOpenSection(SettingsSection.BOOT_SAFETY) },
+                )
+                SettingsDivider()
+                SettingsNavigationRow(
+                    section = SettingsSection.APP_COVERAGE,
+                    onClick = { onOpenSection(SettingsSection.APP_COVERAGE) },
                 )
                 SettingsDivider()
                 SettingsNavigationRow(

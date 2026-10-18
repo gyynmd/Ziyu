@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.util.Log
 import androidx.compose.runtime.snapshotFlow
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -23,6 +24,19 @@ import kotlinx.coroutines.launch
 
 private const val FONT_TASK_CHANNEL = "font_tasks"
 private const val FONT_TASK_NOTIFICATION_ID = 14332
+private const val FONT_TASK_START_REJECTED_NOTICE =
+    "系统未能启动字体后台进度服务；任务仍继续，打开字域查看进度。"
+private const val FONT_TASK_DATA_SYNC_TIMEOUT_NOTICE =
+    "系统已结束字体后台进度服务；任务仍继续，打开字域查看进度。"
+
+internal fun fontTaskDetachedNotice(
+    spec: FontTaskNotificationSpec,
+    reason: String,
+): FontTaskNotificationSpec = if (spec.ongoing) {
+    spec.copy(message = "$reason\n${spec.message}")
+} else {
+    spec
+}
 
 internal data class FontTaskNotificationSpec(
     val kind: String,
@@ -54,10 +68,41 @@ internal data class FontTaskNotificationSpec(
 }
 
 internal object FontTaskNotificationController {
-    fun start(context: Context) {
-        ensureChannel(context)
-        ContextCompat.startForegroundService(context, Intent(context, FontTaskForegroundService::class.java))
+    @Volatile private var serviceExpected = false
+    @Volatile private var detachedReason: String? = null
+
+    fun start(context: Context): Boolean {
+        if (serviceExpected) return true
+        return try {
+            ensureChannel(context)
+            ContextCompat.startForegroundService(context, Intent(context, FontTaskForegroundService::class.java))
+            markServiceAttached()
+            true
+        } catch (error: RuntimeException) {
+            markServiceDetached(FONT_TASK_START_REJECTED_NOTICE)
+            Log.w("ZiyuFontTask", "System rejected the font task foreground service", error)
+            false
+        }
     }
+
+    fun markServiceAttached() {
+        detachedReason = null
+        serviceExpected = true
+    }
+
+    fun markServiceDetached(reason: String) {
+        detachedReason = reason
+        serviceExpected = false
+    }
+
+    fun markServiceStopped() {
+        serviceExpected = false
+    }
+
+    fun isServiceExpected(): Boolean = serviceExpected
+
+    private fun forDisplay(spec: FontTaskNotificationSpec): FontTaskNotificationSpec =
+        detachedReason?.let { fontTaskDetachedNotice(spec, it) } ?: spec
 
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -113,7 +158,7 @@ internal object FontTaskNotificationController {
 
     fun notify(context: Context, spec: FontTaskNotificationSpec) {
         context.getSystemService(NotificationManager::class.java)
-            .notify(FONT_TASK_NOTIFICATION_ID, build(context, spec))
+            .notify(FONT_TASK_NOTIFICATION_ID, build(context, forDisplay(spec)))
     }
 }
 
@@ -131,11 +176,20 @@ internal class FontTaskForegroundService : Service() {
         val current = model.fontTaskNotification
             ?: FontTaskNotificationSpec("switch", "queued", "正在准备字体任务")
         val notification = FontTaskNotificationController.build(this, current)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(FONT_TASK_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            startForeground(FONT_TASK_NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(FONT_TASK_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else {
+                startForeground(FONT_TASK_NOTIFICATION_ID, notification)
+            }
+        } catch (error: RuntimeException) {
+            FontTaskNotificationController.markServiceDetached(FONT_TASK_START_REJECTED_NOTICE)
+            FontTaskNotificationController.notify(this, current)
+            Log.w("ZiyuFontTask", "System rejected foreground promotion for font task", error)
+            stopSelfResult(startId)
+            return START_NOT_STICKY
         }
+        FontTaskNotificationController.markServiceAttached()
         observer?.cancel()
         observer = scope.launch {
             snapshotFlow { model.fontTaskNotification }
@@ -152,9 +206,18 @@ internal class FontTaskForegroundService : Service() {
         return START_NOT_STICKY
     }
 
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        observer?.cancel()
+        FontTaskNotificationController.markServiceDetached(FONT_TASK_DATA_SYNC_TIMEOUT_NOTICE)
+        model.fontTaskNotification?.let { FontTaskNotificationController.notify(this, it) }
+        stopForeground(STOP_FOREGROUND_DETACH)
+        stopSelf()
+    }
+
     override fun onDestroy() {
         observer?.cancel()
         scope.cancel()
+        FontTaskNotificationController.markServiceStopped()
         super.onDestroy()
     }
 

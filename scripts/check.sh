@@ -40,7 +40,11 @@ python3 -m py_compile \
   "$ROOT/common/mix_library.py" "$ROOT/common/font_structure.py" "$ROOT/scripts/small_digit_font_test.py" \
   "$ROOT/common/font_metrics_normalize.py" \
   "$ROOT/common/font_coverage.py" \
+  "$ROOT/common/device_font_process_audit.py" \
+  "$ROOT/common/font_coverage_locator.py" \
   "$ROOT/common/font_axis_info.py" \
+  "$ROOT/common/composite_collection_build.py" \
+  "$ROOT/common/composite_collection_contract.py" \
   "$ROOT/common/font_role_check.py" \
   "$ROOT/common/font_metadata.py" \
   "$ROOT/common/font_extract_faces.py" \
@@ -368,6 +372,10 @@ python3 "$ROOT/scripts/mix_workflow_test.py"
 python3 "$ROOT/scripts/small_digit_font_test.py"
 python3 "$ROOT/scripts/action_control_test.py"
 python3 "$ROOT/scripts/app_controls_bridge_test.py"
+python3 "$ROOT/scripts/font_coverage_process_audit_test.py"
+python3 "$ROOT/scripts/font_axis_info_test.py"
+python3 "$ROOT/scripts/composite_collection_build_test.py"
+python3 "$ROOT/scripts/boot_ota_guard_test.py"
 python3 "$ROOT/scripts/home_backend_status_test.py"
 bash "$ROOT/scripts/font_undo_boot_test.sh"
 bash "$ROOT/scripts/physical_payload_manifest_test.sh"

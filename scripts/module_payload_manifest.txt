@@ -216,3 +216,12 @@ common/font_live_state.sh
 common/font_live_payload.py
 common/font_live_switch.sh
 common/font_ui_cache.py
+
+common/coloros_flipfont.py
+common/device_font_process_audit.py
+common/font_coverage_locator.py
+common/composite_collection_build.py
+common/composite_collection_contract.py
+
+common/composite_collection_build.sh
+common/boot_ota_guard.sh

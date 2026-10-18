@@ -81,4 +81,78 @@ ok grep -qx 'OSans-Solid-Digits-VF' "$TMP/coloros-names"
 . "$ROOT/common/font_runtime_policy.sh"
 ok test "$(_lfrp_target_kind OSans-Solid-Digits-VF.ttf)" = latin
 
+# Run the real foreground target list -> fast mapper -> private payload checks
+# against actual dangling/cyclic OEM pathnames. The stock links are discovery
+# evidence only: the resulting overlay must be a nonempty file and pass the
+# existing full payload manifest check before it is considered usable.
+FAST_MODULE="$TMP/fast-module"
+MODULE_DIR="$FAST_MODULE"
+MODDIR="$FAST_MODULE"
+IS_COLOROS=true
+LUOSHU_COLOROS_CACHE_KEY=coloros-fast-route-fixture
+LUOSHU_COLOROS_SYSTEM_FONTS_ROOT="$TMP/fast-real/system/fonts"
+LUOSHU_COLOROS_SYSTEM_EXT_FONTS_ROOT="$TMP/fast-real/system_ext/fonts"
+LUOSHU_COLOROS_PRODUCT_FONTS_ROOT="$TMP/fast-real/product/fonts"
+export MODULE_DIR MODDIR IS_COLOROS LUOSHU_COLOROS_CACHE_KEY \
+    LUOSHU_COLOROS_SYSTEM_FONTS_ROOT LUOSHU_COLOROS_SYSTEM_EXT_FONTS_ROOT \
+    LUOSHU_COLOROS_PRODUCT_FONTS_ROOT
+mkdir -p "$FAST_MODULE/config" "$FAST_MODULE/logs" \
+    "$LUOSHU_COLOROS_SYSTEM_FONTS_ROOT" "$LUOSHU_COLOROS_SYSTEM_EXT_FONTS_ROOT" \
+    "$LUOSHU_COLOROS_PRODUCT_FONTS_ROOT"
+make_fixture_link() {
+    _mfl_target="$1"
+    _mfl_link="$2"
+    if [ -n "${LUOSHU_TEST_PYTHON:-}" ]; then
+        command -v cygpath >/dev/null 2>&1 && _mfl_link=$(cygpath -w "$_mfl_link")
+        "$LUOSHU_TEST_PYTHON" -c 'import os,sys; os.symlink(sys.argv[1],sys.argv[2])' \
+            "$_mfl_target" "$_mfl_link"
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 -c 'import os,sys; os.symlink(sys.argv[1],sys.argv[2])' \
+            "$_mfl_target" "$_mfl_link"
+    else
+        ln -s "$_mfl_target" "$_mfl_link"
+    fi
+}
+make_fixture_link missing-stock-target.ttf "$LUOSHU_COLOROS_SYSTEM_FONTS_ROOT/SysFont-Dangling-Regular.ttf"
+make_fixture_link SysFont-Cycle-Regular.ttf "$LUOSHU_COLOROS_SYSTEM_FONTS_ROOT/SysFont-Cycle-Regular.ttf"
+make_fixture_link missing-digit-target.ttf "$LUOSHU_COLOROS_SYSTEM_EXT_FONTS_ROOT/OSans-Solid-Digits-VF.ttf"
+
+. "$ROOT/common/coloros_global.sh"
+. "$ROOT/common/device_font_payload_policy.sh"
+# Keep this fixture focused on names discovered from the physical directories.
+_coloros_core_files() { :; }
+_coloros_google_text_files() { :; }
+_coloros_vendor_files() { :; }
+_coloros_oem_ui_files() { :; }
+
+printf 'osans_digits = 1 # enabled\r\n' > "$FAST_MODULE/config/coloros_slot_groups.conf"
+FAST_TARGETS=$(get_all_coloros_files)
+printf '%s\n' "$FAST_TARGETS" > "$TMP/fast-targets-enabled"
+ok grep -qx 'SysFont-Dangling-Regular.ttf' "$TMP/fast-targets-enabled"
+ok grep -qx 'SysFont-Cycle-Regular.ttf' "$TMP/fast-targets-enabled"
+ok grep -qx 'OSans-Solid-Digits-VF.ttf' "$TMP/fast-targets-enabled"
+ok _device_font_fast_map "$USER_FONTS_DIR/Demo-Regular.ttf" Demo quick Demo
+ok cmp -s "$USER_FONTS_DIR/Demo-Regular.ttf" "$FAST_MODULE/system/fonts/SysFont-Dangling-Regular.ttf"
+ok cmp -s "$USER_FONTS_DIR/Demo-Regular.ttf" "$FAST_MODULE/system/fonts/SysFont-Cycle-Regular.ttf"
+ok cmp -s "$USER_FONTS_DIR/Demo-Regular.ttf" "$FAST_MODULE/system_ext/fonts/OSans-Solid-Digits-VF.ttf"
+
+. "$ROOT/common/font_safety.sh"
+. "$ROOT/common/font_runtime_policy.sh"
+ok luoshu_payload_validate_current ColorOsFixture
+ok luoshu_payload_build_manifest
+ok luoshu_payload_validate_manifest_full
+ok grep -q '^system/fonts/SysFont-Dangling-Regular.ttf|' "$FAST_MODULE/config/font-payload-manifest.conf"
+ok grep -q '^system/fonts/SysFont-Cycle-Regular.ttf|' "$FAST_MODULE/config/font-payload-manifest.conf"
+ok grep -q '^system_ext/fonts/OSans-Solid-Digits-VF.ttf|' "$FAST_MODULE/config/font-payload-manifest.conf"
+
+printf 'osans_digits = 0 # disabled\r\n' > "$FAST_MODULE/config/coloros_slot_groups.conf"
+FAST_TARGETS=$(get_all_coloros_files)
+printf '%s\n' "$FAST_TARGETS" > "$TMP/fast-targets-disabled"
+no grep -qx 'OSans-Solid-Digits-VF.ttf' "$TMP/fast-targets-disabled"
+ok _device_font_fast_map "$USER_FONTS_DIR/Demo-Regular.ttf" Demo quick Demo
+no test -e "$FAST_MODULE/system_ext/fonts/OSans-Solid-Digits-VF.ttf"
+ok luoshu_payload_build_manifest
+ok luoshu_payload_validate_manifest_full
+no grep -q '^system_ext/fonts/OSans-Solid-Digits-VF.ttf|' "$FAST_MODULE/config/font-payload-manifest.conf"
+
 printf 'ColorOS safe partition mapping tests passed.\n'

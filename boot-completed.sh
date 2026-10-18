@@ -4,6 +4,25 @@
 set +e
 MODDIR="${0%/*}"
 MODULE_DIR="$MODDIR"
+mkdir -p "$MODDIR/logs" 2>/dev/null || true
+
+if [ -f "$MODDIR/common/boot_ota_guard.sh" ]; then
+    MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/boot_ota_guard.sh" complete "$MODDIR" \
+        >> "$MODDIR/logs/boot-ota-guard.log" 2>&1 || true
+    MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/boot_ota_guard.sh" hook "$MODDIR" \
+        >> "$MODDIR/logs/boot-ota-guard.log" 2>&1
+    _boot_guard_rc=$?
+    case "$_boot_guard_rc" in
+        0) ;;
+        10|12)
+            [ ! -f "$MODDIR/common/mount_backend_runtime.sh" ] || \
+                MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/mount_backend_runtime.sh" hook service \
+                    >> "$MODDIR/logs/mount-backend.log" 2>&1 || true
+            exit 0
+            ;;
+        *) exit 1 ;;
+    esac
+fi
 
 [ -f "$MODDIR/common/util_functions.sh" ] && . "$MODDIR/common/util_functions.sh"
 [ -f "$MODDIR/common/font_config_runtime.sh" ] && . "$MODDIR/common/font_config_runtime.sh"

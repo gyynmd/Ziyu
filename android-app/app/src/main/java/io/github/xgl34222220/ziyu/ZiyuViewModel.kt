@@ -11,11 +11,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.roundToInt
@@ -69,6 +72,9 @@ internal data class ModuleSnapshot(
 
     val effectiveLabel: String
         get() = when {
+            verificationReason == "ota-generation-prepared" -> "${activeLabel}（新系统负载已准备，待完整重启）"
+            verificationReason in setOf("safe-mode", "boot-safety-safe-mode") -> "${activeLabel}（开机保护暂停加载）"
+            verificationReason in setOf("ota-fingerprint", "ota-fingerprint-change") -> "${activeLabel}（系统更新后需重新应用）"
             rollbackPending || fontEffectState == "rollback-pending" ->
                 "${activeLabel}（验证失败，待重启恢复 ${rollbackTargetLabel}）"
             (activeFont in setOf("", "default") && fontEffectState != "pending-reboot") || fontEffectState == "system" -> "系统默认字体"
@@ -91,6 +97,8 @@ internal data class ModuleSnapshot(
 
     val effectFailureMessage: String
         get() = when {
+            verificationReason in setOf("safe-mode", "boot-safety-safe-mode") -> "开机保护已暂停字体加载，文件和选择仍保留；请在设置的开机保护页面核对，必要时先恢复默认字体。"
+            verificationReason in setOf("ota-fingerprint", "ota-fingerprint-change") -> "系统更新后旧字体负载已暂缓加载；完成原厂字体重扫后，请重新应用字体或恢复默认字体。"
             rollbackPending || fontEffectState == "rollback-pending" ->
                 "通用字体运行验证失败，已准备安全回退到 ${rollbackTargetLabel}；完整重启后恢复"
             fontEffectState == "failed" && verificationMode.startsWith("universal") ->
@@ -359,6 +367,8 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
                 val lastError = data.optString("lastError")
                 if (lastError.isNotBlank() && lastError != "none" && lastError != "provider-scan-pending") {
                     val reason = when {
+                        lastError == "boot-safety-safe-mode" -> "开机保护已暂停加载，请在设置中查看开机保护。"
+                        lastError == "ota-fingerprint-change" -> "系统更新后旧负载暂缓加载，请完成原厂重扫并重新应用。"
                         lastError.contains("mountify-soft-reload-unavailable") ->
                             "Mountify 未重新扫描字体，软重启兼容检查未通过；待应用字体已保留。"
                         lastError == "provider-published-payload-invalid" ->
@@ -463,6 +473,7 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
 
     private var _searchQuery by mutableStateOf("")
     val searchQuery: String get() = _searchQuery
+    private val fontFilterMemo = FontFilterMemo()
 
     var operationBusy by mutableStateOf(false)
         private set
@@ -507,16 +518,9 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
         if (snapshot.installed) requestFontPrewarm()
     }
 
+    // Keep these reads snapshot-observed; the memo only skips repeated filtering between updates.
     val filteredFonts: List<FontItem>
-        get() {
-            val query = searchQuery.trim()
-            if (query.isEmpty()) return fonts
-            return fonts.filter { item ->
-                item.name.contains(query, ignoreCase = true) ||
-                    item.id.contains(query, ignoreCase = true) ||
-                    item.format.contains(query, ignoreCase = true)
-            }
-        }
+        get() = fontFilterMemo.filter(fonts, searchQuery)
 
     fun setSearchQuery(value: String) {
         _searchQuery = value
@@ -527,8 +531,10 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
         val spec = FontTaskNotificationSpec(kind, state, message, progress)
         fontTaskNotification = spec
         if (spec.ongoing && !wasOngoing) {
-            runCatching { FontTaskNotificationController.start(getApplication()) }
-                .onFailure { android.util.Log.w("ZiyuFontTask", "Unable to start progress service", it) }
+            FontTaskNotificationController.start(getApplication())
+        }
+        if (!FontTaskNotificationController.isServiceExpected()) {
+            FontTaskNotificationController.notify(getApplication(), spec)
         }
     }
 
@@ -1298,10 +1304,19 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
         onProgress: (JSONObject) -> Unit,
     ): JSONObject {
         var failures = 0
+        var unchangedPolls = 0
+        var lastSignature = ""
         val budget = TaskPollBudget(timeoutSeconds.toLong() * 1_000L)
+        val foreground = getApplication<ZiyuApplication>().processForeground
         while (budget.remainingMs > 0L) {
-            val intervalMs = if (budget.elapsedMs < 30_000L) 1_000L else 2_000L
-            delay(minOf(intervalMs, budget.remainingMs))
+            val visibleAtStart = foreground.value
+            val intervalMs = if (visibleAtStart) {
+                taskPollIntervalMs(budget.elapsedMs, unchangedPolls)
+            } else {
+                BACKGROUND_TASK_POLL_INTERVAL_MS
+            }
+            val pollNow = waitForTaskPoll(foreground, minOf(intervalMs, budget.remainingMs))
+            if (!pollNow) continue
             val remainingMs = budget.remainingMs
             if (remainingMs <= 0L) break
             val status = RootShell.exec(
@@ -1321,6 +1336,9 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
                 continue
             }
             failures = 0
+            val signature = taskPollSignature(data)
+            unchangedPolls = if (signature == lastSignature) unchangedPolls + 1 else 0
+            lastSignature = signature
             val advertisedTimeout = data.optInt("timeout", 0)
             if (advertisedTimeout > 0) budget.extendTo((advertisedTimeout.toLong() + 30L) * 1_000L)
             onProgress(data)
@@ -1329,6 +1347,19 @@ internal class ZiyuViewModel(application: Application) : AndroidViewModel(applic
             }
         }
         error("字体任务超时，请查看日志")
+    }
+
+    private fun taskPollSignature(data: JSONObject): String =
+        "${data.optString("state")}|${data.optInt("percent", -1)}|${data.optJSONObject("progress")?.optInt("percent", -1)}|${data.optString("message")}"
+
+    private suspend fun waitForTaskPoll(foreground: StateFlow<Boolean>, intervalMs: Long): Boolean {
+        val visibleAtStart = foreground.value
+        val changedVisibility = withTimeoutOrNull(intervalMs) {
+            foreground.first { it != visibleAtStart }
+        }
+        if (changedVisibility == null) return true
+        // Poll immediately if the app returned to the foreground during the wait.
+        return foreground.value
     }
 
     private fun finishMixFailure(message: String) {

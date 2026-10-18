@@ -82,6 +82,15 @@ _boot_verify_finish() {
     type luoshu_clear_task_pid >/dev/null 2>&1 && luoshu_clear_task_pid "$PID_FILE" "$_task"
 }
 
+_boot_verify_guard_action() {
+    _action="$1"
+    _reason="${2:-}"
+    [ -f "$MODDIR/common/boot_ota_guard.sh" ] || return 0
+    MODDIR="$MODDIR" MODULE_DIR="$MODDIR" \
+        sh "$MODDIR/common/boot_ota_guard.sh" "$_action" "$MODDIR" "$_reason" \
+        >> "$MODDIR/logs/boot-ota-guard.log" 2>&1
+}
+
 _boot_verify_worker() {
     _task="$1"
     _waited=0
@@ -116,15 +125,29 @@ _boot_verify_worker() {
 
         _state=$(_boot_verify_value "$STATE_FILE" state)
         case "$_state" in
-            verified|partial)
+            verified)
                 if [ "$_rc" -eq 0 ]; then
+                    if ! _boot_verify_guard_action apply-verified; then
+                        _boot_verify_guard_action apply-failed device-verification-identity-mismatch || true
+                    fi
                     _boot_verify_finish "$_task"
                     return 0
                 fi
                 ;;
+            partial)
+                if [ "$_rc" -eq 0 ]; then
+                    _boot_verify_guard_action apply-failed partial-device-verification || true
+                    _boot_verify_finish "$_task"
+                    return 2
+                fi
+                ;;
             not-applicable)
+                _boot_verify_guard_action apply-verified || true
                 _boot_verify_finish "$_task"
                 return 0
+                ;;
+            failed)
+                _boot_verify_guard_action apply-failed device-load-verification-failed || true
                 ;;
             compatibility)
                 # Compatibility mapping is a final, truthful state; reboot retries cannot turn

@@ -40,7 +40,8 @@ _role_shadow_refresh() {
     _role_shadow_exec "$SCRIPT" \
         --topology "$TOPOLOGY" \
         --roles-output "$ROLES" \
-        --plan-output "$PLAN"
+        --plan-output "$PLAN" \
+        --slot-groups "$CONFIG_DIR/coloros_slot_groups.conf"
 }
 
 case "${1:-refresh}" in
@@ -51,7 +52,8 @@ case "${1:-refresh}" in
         _role_shadow_exec "$SCRIPT" --validate \
             --topology "$TOPOLOGY" \
             --roles-output "$ROLES" \
-            --plan-output "$PLAN"
+            --plan-output "$PLAN" \
+            --slot-groups "$CONFIG_DIR/coloros_slot_groups.conf"
         ;;
     roles-path)
         printf '%s\n' "$ROLES"

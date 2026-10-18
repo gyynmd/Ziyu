@@ -109,26 +109,34 @@ safe_source_identity() {
 
 safe_inventory_identity() {
     _sii_file="$CONFIG_DIR/device_font_inventory.json"
-    [ -s "$_sii_file" ] || { printf 'no-inventory\n'; return 0; }
+    _sii_content='no-inventory'
+    [ ! -s "$_sii_file" ] || _sii_content=''
     _sii_pyroot="$MODDIR/common/python"
-    if [ -x "$_sii_pyroot/bin/luoshu-python" ] && [ -f "$MODDIR/common/font_cache_identity.py" ]; then
+    if [ -n "$_sii_content" ]; then
+        :
+    elif [ -x "$_sii_pyroot/bin/luoshu-python" ] && [ -f "$MODDIR/common/font_cache_identity.py" ]; then
         _sii_content=$(PYTHONHOME="$_sii_pyroot" \
             PYTHONPATH="$_sii_pyroot/lib/python3.14:$_sii_pyroot/lib/python3.14/site-packages" \
             LD_LIBRARY_PATH="$_sii_pyroot/lib:$_sii_pyroot/lib/python3.14/lib-dynload${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
             "$_sii_pyroot/bin/luoshu-python" "$MODDIR/common/font_cache_identity.py" "$_sii_file" 2>/dev/null)
-        if [ "$?" -eq 0 ] && [ -n "$_sii_content" ]; then
-            printf '%s\n' "$_sii_content"
-            return 0
+        [ "$?" -eq 0 ] || _sii_content=''
+    fi
+    if [ -z "$_sii_content" ] && [ -s "$_sii_file" ]; then
+        # If JSON/runtime is unavailable, retain the conservative byte identity.
+        if command -v cksum >/dev/null 2>&1; then
+            _sii_content=$(cksum "$_sii_file" 2>/dev/null | awk '{print $1 ":" $2}')
+        elif command -v busybox >/dev/null 2>&1; then
+            _sii_content=$(busybox cksum "$_sii_file" 2>/dev/null | awk '{print $1 ":" $2}')
+        else
+            _sii_content=$(safe_source_identity "$_sii_file")
         fi
     fi
-    # If JSON/runtime is unavailable, retain the conservative byte identity.
-    if command -v cksum >/dev/null 2>&1; then
-        cksum "$_sii_file" 2>/dev/null | awk '{print $1 ":" $2}'
-    elif command -v busybox >/dev/null 2>&1; then
-        busybox cksum "$_sii_file" 2>/dev/null | awk '{print $1 ":" $2}'
-    else
-        safe_source_identity "$_sii_file"
+    _sii_snapshot="$CONFIG_DIR/stock-font-snapshot/manifest.json"
+    _sii_snapshot_identity='no-stock-snapshot'
+    if [ -s "$_sii_snapshot" ] && [ ! -L "$_sii_snapshot" ]; then
+        _sii_snapshot_identity=$(safe_hash_stream < "$_sii_snapshot")
     fi
+    printf '%s|stock-snapshot:%s\n' "$_sii_content" "$_sii_snapshot_identity"
 }
 
 safe_mapper_identity() {
@@ -146,7 +154,21 @@ safe_mapper_identity() {
                          "$MODDIR/common/hyperos_physical_policy.py" \
                          "$MODDIR/common/font_role_policy.py" \
                          "$MODDIR/common/font_slot_weight.py" \
-                         "$MODDIR/common/font_slot_coverage.py"; do
+                         "$MODDIR/common/font_slot_coverage.py" \
+                         "$MODDIR/common/coloros_global.sh" \
+                         "$MODDIR/common/device_font_payload_policy.sh" \
+                         "$MODDIR/common/font_role_shadow.py" \
+                         "$MODDIR/common/universal_font_plan.py" \
+                         "$MODDIR/common/composite_collection_build.py" \
+                         "$MODDIR/common/composite_collection_build.sh" \
+                         "$MODDIR/common/composite_collection_contract.py" \
+                         "$MODDIR/common/stock_font_snapshot.py" \
+                         "$MODDIR/common/font_source_profile.py" \
+                         "$MODDIR/common/font_inventory.py" \
+                         "$MODDIR/common/font_coverage.py" \
+                         "$MODDIR/common/legacy_v14_4/composite_font.py" \
+                         "$MODDIR/common/legacy_v14_4/font_switch_safe.sh" \
+                         "$CONFIG_DIR/coloros_slot_groups.conf"; do
             [ -f "$_smi_file" ] || continue
             if command -v cksum >/dev/null 2>&1; then
                 cksum "$_smi_file" 2>/dev/null | awk -v p="$_smi_file" '{print p "|" $1 "|" $2}'
@@ -231,6 +253,13 @@ safe_family_identity() {
             printf '%s:%s:%s:%s\n' "$_sfi_role" "${#_sfi_file}" "$_sfi_file" "$_sfi_identity"
         done
     ) || return 1
+    _sfi_manifest="$USER_FONTS_DIR/$1.conf"
+    if [ -f "$_sfi_manifest" ] && [ ! -L "$_sfi_manifest" ]; then
+        _sfi_manifest_identity=$(safe_source_identity "$_sfi_manifest") || return 1
+        _sfi_manifest_hash=$(safe_hash_stream < "$_sfi_manifest") || return 1
+        _sfi_records="$_sfi_records
+manifest:${_sfi_manifest_identity}:${_sfi_manifest_hash}"
+    fi
     printf '%s\n' "$_sfi_records" | safe_hash_stream
 }
 
@@ -279,6 +308,7 @@ safe_switch_cache_restore() {
     [ "$(read_state_value "$_scr_conf" rom)" = "$_sck_rom" ] || return 1
     [ "$(read_state_value "$_scr_conf" mapperIdentity)" = "$_sck_mapper" ] || return 1
 
+    rm -rf "$STAGE_PAYLOAD/.luoshu-collection-proofs" 2>/dev/null || true
     _scr_restored=0
     for _scr_part in $(safe_partition_list); do
         _scr_src="$_scr_root/tree/$_scr_part/fonts"
@@ -292,6 +322,11 @@ safe_switch_cache_restore() {
         fi
     done
     [ "$_scr_restored" -gt 0 ] || return 1
+    if [ "${_collection_mix:-false}" = true ]; then
+        _scr_proofs="$_scr_root/tree/.luoshu-collection-proofs"
+        [ -d "$_scr_proofs" ] && [ ! -L "$_scr_proofs" ] || return 1
+        cp -a "$_scr_proofs" "$STAGE_PAYLOAD/.luoshu-collection-proofs" 2>/dev/null || return 1
+    fi
     [ "$(safe_source_identity "$_scr_file")" = "$_sck_identity" ] || return 1
     [ "$(safe_family_identity "$_scr_font")" = "$_sck_family" ] || return 1
     # Pruning is ordered by directory mtime. A successful reuse is a use, too.
@@ -359,6 +394,13 @@ safe_switch_cache_store() {
         _scs_saved=$((_scs_saved + 1))
     done
     [ "$_scs_saved" -gt 0 ] || { rm -rf "$_scs_stage" 2>/dev/null || true; return 1; }
+    if [ -d "$STAGE_PAYLOAD/.luoshu-collection-proofs" ] &&
+       [ ! -L "$STAGE_PAYLOAD/.luoshu-collection-proofs" ]; then
+        cp -a "$STAGE_PAYLOAD/.luoshu-collection-proofs" "$_scs_stage/tree/.luoshu-collection-proofs" 2>/dev/null || {
+            rm -rf "$_scs_stage" 2>/dev/null || true
+            return 1
+        }
+    fi
     [ ! -f "$STAGE_PAYLOAD/.luoshu-metrics-report.json" ] ||         cp -f "$STAGE_PAYLOAD/.luoshu-metrics-report.json" "$_scs_stage/tree/.luoshu-metrics-report.json" 2>/dev/null || true
     _scs_identity=$(safe_source_identity "$_scs_file") || { rm -rf "$_scs_stage"; return 1; }
     [ "$_scs_identity" = "$_sck_identity" ] || { rm -rf "$_scs_stage"; return 1; }
@@ -565,6 +607,7 @@ stage_clear_text_payload() {
     # These sidecars describe one payload/inventory, not permanent device policy.
     # A new build must not inherit exclusions from a previous font/OTA state.
     rm -f "$STAGE_PAYLOAD/.luoshu-stock-preserved.paths"           "$STAGE_PAYLOAD/.luoshu-font-role-report.json"           "$STAGE_PAYLOAD/.luoshu-metrics-report.json" 2>/dev/null || return 1
+    rm -rf "$STAGE_PAYLOAD/.luoshu-collection-proofs" 2>/dev/null || true
     for _part in $(safe_partition_list); do
         rm -rf "$STAGE_PAYLOAD/$_part/fonts" 2>/dev/null || true
         _etc="$STAGE_PAYLOAD/$_part/etc"
@@ -742,6 +785,16 @@ switch_font() {
     [ -n "$_font" ] || { safe_error '未指定字体'; return 1; }
     _active_label="${LUOSHU_SWITCH_ACTIVE_LABEL:-$_font}"
     [ -n "$_active_label" ] || _active_label="$_font"
+    if [ -f "$MODDIR/common/boot_ota_guard.sh" ]; then
+        MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/boot_ota_guard.sh" \
+            allow-apply "$MODDIR" "$_active_label" 2>>"$LOG_FILE" || {
+            safe_error '开机安全保护当前只允许恢复系统默认字体；OTA 期间请先完成原厂扫描'
+            return 1
+        }
+    fi
+    _collection_mix=false
+    _collection_cache_hit=false
+    _collection_config=''
 
     _source=''
     if [ "$_font" != default ]; then
@@ -758,6 +811,12 @@ switch_font() {
         _switch_family_identity=$(safe_family_identity "$_font") || {
             safe_error '字体目录已变化，请重新切换'; return 1;
         }
+        _candidate_mix_config="$USER_FONTS_DIR/$_font.conf"
+        if [ -f "$_candidate_mix_config" ] && [ ! -L "$_candidate_mix_config" ] && \
+           [ "$(read_state_value "$_candidate_mix_config" combination)" = true ]; then
+            _collection_mix=true
+            _collection_config="$_candidate_mix_config"
+        fi
         printf '[%s] [SAFE-SWITCH] family snapshot font=%s weights=%s\n' \
             "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown)" "$_font" "$_ffx_weights" \
             >> "$LOG_FILE" 2>/dev/null || true
@@ -799,6 +858,7 @@ switch_font() {
         SYSTEM_FONTS_DIR="$STAGE_PAYLOAD/system/fonts"
         export PAYLOAD_ROOT SYSTEM_FONTS_DIR
         if safe_switch_cache_restore "$_source" "$_font"; then
+            _collection_cache_hit=true
             progress 80 '已复用本机字体对齐缓存'
         else
             progress 48 '正在生成 ROM 核心字体映射'
@@ -828,21 +888,66 @@ switch_font() {
                     return 1
                 }
             fi
-            progress 82 '正在保存本机字体对齐缓存'
             safe_switch_sources_unchanged || {
                 safe_error '生成期间源字体或字重文件已变化，请重新切换'; return 1;
             }
-            safe_switch_cache_store "$_source" "$_font" >/dev/null 2>&1 || true
         fi
         progress 86 '正在校验下一启动字体负载'
         safe_switch_sources_unchanged || {
             safe_error '源字体或字重文件已变化，请重新切换'; return 1;
         }
         stage_preserve_font_roles || { safe_error '等宽字体保护校验失败，当前启动字体未改动'; return 1; }
+        if [ "$_collection_mix" = true ]; then
+            safe_switch_cache_context "$_source" "$_font" || {
+                safe_error '无法核对组合字体集合缓存身份'; return 1;
+            }
+            _collection_request="mix-$_sck_key"
+            _collection_helper="$MODDIR/common/composite_collection_build.sh"
+            [ -f "$_collection_helper" ] || {
+                safe_error '组合字体集合逐面生成组件缺失'; return 1;
+            }
+            if [ "$_collection_cache_hit" = true ]; then
+                : # The restored per-face proof is checked immediately before commit.
+            elif ! LUOSHU_REAL_MODDIR="$MODDIR" sh "$_collection_helper" build \
+                --module "$MODDIR" --payload "$STAGE_PAYLOAD" --source "$_source" \
+                --mix-config "$_collection_config" --request "$_collection_request" \
+                >> "$LOG_FILE" 2>&1; then
+                safe_error '组合字体原厂集合逐面生成或契约校验失败'; return 1;
+            fi
+            safe_switch_sources_unchanged || {
+                safe_error '组合字体集合生成期间源字体或字重文件已变化'; return 1;
+            }
+        fi
         stage_verify "$_font" || { safe_error '新字体负载校验失败，当前启动字体未被改动'; return 1; }
         safe_switch_sources_unchanged || {
             safe_error '校验期间源字体或字重文件已变化，请重新切换'; return 1;
         }
+        if [ "$_collection_mix" = true ]; then
+            if ! LUOSHU_REAL_MODDIR="$MODDIR" sh "$_collection_helper" validate \
+                --module "$MODDIR" --payload "$STAGE_PAYLOAD" \
+                --request "$_collection_request" --require-proof --source "$_source" \
+                >> "$LOG_FILE" 2>&1; then
+                if [ "$_collection_cache_hit" = true ]; then
+                    rm -rf "$SWITCH_CACHE_ROOT/$_sck_key" 2>/dev/null || true
+                fi
+                safe_error '组合字体集合未通过本次请求的原厂 face、输出哈希与逐面布局契约校验'; return 1;
+            fi
+        fi
+        if [ "$_collection_cache_hit" != true ]; then
+            progress 92 '正在保存本机字体对齐缓存'
+            safe_switch_cache_store "$_source" "$_font" >/dev/null 2>&1 || true
+        fi
+        if [ "$_collection_mix" = true ]; then
+            [ ! -L "$STAGE_PAYLOAD/.luoshu-collection-proofs" ] || {
+                safe_error '组合字体集合证明目录包含外部链接'; return 1;
+            }
+            rm -rf "$STAGE_PAYLOAD/.luoshu-collection-proofs" 2>/dev/null || {
+                safe_error '无法清理组合字体集合临时证明'; return 1;
+            }
+            safe_switch_sources_unchanged || {
+                safe_error '组合字体来源在最终提交前发生变化'; return 1;
+            }
+        fi
     fi
 
     progress 94 '正在提交下一启动字体负载'
@@ -868,12 +973,26 @@ switch_font() {
     ZIYU_LIVE_OWNER_PID="$$" sh "$MODDIR/common/font_live_switch.sh" apply >> "$LOG_FILE" 2>&1
     _live_rc=$?
     if [ "$_live_rc" -eq 0 ]; then
+        if [ -f "$MODDIR/common/boot_ota_guard.sh" ]; then
+            MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/boot_ota_guard.sh" \
+                record-apply "$MODDIR" "$_active_label" >>"$LOG_FILE" 2>&1 || {
+                safe_error '字体已生成，但开机保护未能确认这一代负载；保护仍保持启用，请查看日志'
+                return 1
+            }
+        fi
         progress 100 '字体已热挂载，部分界面可能需要重新打开以刷新缓存'
         printf '{"status":"ok","data":{"font":"%s","rebootRequired":false,"liveApplied":true,"core":"physical-safe-v1","pipeline":"live-mount"}}\n' "$(json_escape "$_active_label")"
         return 0
     fi
     if [ "$_live_rc" -ne 3 ]; then
         safe_error '热切换或回滚未确认，重启队列已保留，请查看日志'; return 1
+    fi
+    if [ -f "$MODDIR/common/boot_ota_guard.sh" ]; then
+        MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/boot_ota_guard.sh" \
+            record-apply "$MODDIR" "$_active_label" >>"$LOG_FILE" 2>&1 || {
+            safe_error '下一启动字体已生成，但开机保护未能确认这一代负载；保护仍保持启用，请查看日志'
+            return 1
+        }
     fi
     progress 100 '字体已准备完成，当前挂载方式需重启后生效'
     printf '{"status":"ok","data":{"font":"%s","rebootRequired":true,"core":"physical-safe-v1","pipeline":"next-boot-stage"}}\n' \

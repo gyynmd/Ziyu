@@ -5,6 +5,15 @@
 set +e
 MODDIR="${0%/*}"
 MODULE_DIR="$MODDIR"
+if [ -f "$MODDIR/common/boot_ota_guard.sh" ]; then
+    _boot_guard_cleanup=$(MODDIR="$MODDIR" MODULE_DIR="$MODDIR" \
+        sh "$MODDIR/common/boot_ota_guard.sh" uninstall-cleanup "$MODDIR" 2>&1)
+    _boot_guard_rc=$?
+    if [ "$_boot_guard_rc" -ne 0 ] || ! printf '%s\n' "$_boot_guard_cleanup" | grep -q '^status=ok$'; then
+        printf '字域：开机/OTA 后台任务清理未确认，已停止卸载并保留诊断状态。%s\n' "$_boot_guard_cleanup" >&2
+        exit 1
+    fi
+fi
 MODDIR="$MODDIR" sh "$MODDIR/common/font_live_switch.sh" retire || {
     echo '字域：热挂载清理尚未确认，保留运行文件并停止卸载。' >&2
     exit 1
@@ -36,8 +45,12 @@ if [ -e "$MODDIR/.ziyu-state/nomount-rules.current" ]; then
     }
 fi
 [ -f "$MODDIR/common/private_payload.sh" ] && . "$MODDIR/common/private_payload.sh"
-type luoshu_private_unmount_module_view >/dev/null 2>&1 && \
-    luoshu_private_unmount_module_view "$MODDIR" >/dev/null 2>&1 || true
+if type luoshu_private_unmount_module_view >/dev/null 2>&1; then
+    luoshu_private_unmount_module_view "$MODDIR" || {
+        echo '字域：旧版私有视图卸载未确认，已停止卸载并保留挂载证据。' >&2
+        exit 1
+    }
+fi
 # Restore recorded component overrides before removing the runtime.
 if [ -f "$MODDIR/common/google_font_fallback.sh" ]; then
     sh "$MODDIR/common/google_font_fallback.sh" restore-owned --json || \

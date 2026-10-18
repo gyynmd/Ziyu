@@ -111,27 +111,76 @@ luoshu_private_unmount_module_view() {
     _lpp_list="$_lpp_state/module-view.mounts"
     _lpp_symlinks="$_lpp_state/module-view.symlinks"
     [ -d "$_lpp_state" ] || return 0
+    _lpp_failed=0
 
     if [ -s "$_lpp_list" ]; then
-        awk '{ item[NR]=$0 } END { for (i=NR; i>=1; i--) print item[i] }' "$_lpp_list" 2>/dev/null | \
+        _lpp_reverse="$_lpp_list.reverse.$$"
+        _lpp_remaining_reverse="$_lpp_list.remaining-reverse.$$"
+        _lpp_remaining="$_lpp_list.remaining.$$"
+        awk '{ item[NR]=$0 } END { for (i=NR; i>=1; i--) print item[i] }' \
+            "$_lpp_list" > "$_lpp_reverse" 2>/dev/null || return 1
+        : > "$_lpp_remaining_reverse" 2>/dev/null || { rm -f "$_lpp_reverse"; return 1; }
         while IFS= read -r _lpp_target; do
-            case "$_lpp_target" in "${_lpp_module%/}"/*) ;; *) continue ;; esac
-            _luoshu_private_umount_cmd "$_lpp_target" >/dev/null 2>&1 || true
-        done
+            [ -n "$_lpp_target" ] || continue
+            case "$_lpp_target" in
+                "${_lpp_module%/}"/*) ;;
+                *) printf '%s\n' "$_lpp_target" >> "$_lpp_remaining_reverse" || _lpp_failed=1; continue ;;
+            esac
+            if _luoshu_private_is_mountpoint "$_lpp_target"; then
+                _luoshu_private_umount_cmd "$_lpp_target" >/dev/null 2>&1 || true
+                if _luoshu_private_is_mountpoint "$_lpp_target"; then
+                    printf '%s\n' "$_lpp_target" >> "$_lpp_remaining_reverse" || _lpp_failed=1
+                    _lpp_failed=1
+                fi
+            fi
+        done < "$_lpp_reverse"
+        awk '{ item[NR]=$0 } END { for (i=NR; i>=1; i--) print item[i] }' \
+            "$_lpp_remaining_reverse" > "$_lpp_remaining" 2>/dev/null || _lpp_failed=1
+        if [ "$_lpp_failed" -eq 0 ]; then
+            mv -f "$_lpp_remaining" "$_lpp_list" 2>/dev/null || _lpp_failed=1
+        else
+            cp -f "$_lpp_remaining" "$_lpp_list" 2>/dev/null || true
+        fi
+        rm -f "$_lpp_reverse" "$_lpp_remaining_reverse" "$_lpp_remaining" 2>/dev/null || true
     fi
-    : > "$_lpp_list" 2>/dev/null || true
 
     if [ -s "$_lpp_symlinks" ]; then
+        _lpp_remaining="$_lpp_symlinks.remaining.$$"
+        : > "$_lpp_remaining" 2>/dev/null || return 1
         while IFS='|' read -r _lpp_target _lpp_source; do
             [ -n "$_lpp_target" ] || continue
-            case "$_lpp_target" in "${_lpp_module%/}"/*) ;; *) continue ;; esac
+            case "$_lpp_target" in
+                "${_lpp_module%/}"/*) ;;
+                *) printf '%s|%s\n' "$_lpp_target" "$_lpp_source" >> "$_lpp_remaining" || _lpp_failed=1; continue ;;
+            esac
             if [ -L "$_lpp_target" ]; then
                 _lpp_link=$(readlink "$_lpp_target" 2>/dev/null)
-                [ "$_lpp_link" = "$_lpp_source" ] && rm -f "$_lpp_target" 2>/dev/null || true
+                if [ "$_lpp_link" = "$_lpp_source" ]; then
+                    rm -f "$_lpp_target" 2>/dev/null || true
+                    [ ! -L "$_lpp_target" ] || {
+                        printf '%s|%s\n' "$_lpp_target" "$_lpp_source" >> "$_lpp_remaining" || true
+                        _lpp_failed=1
+                    }
+                else
+                    printf '%s|%s\n' "$_lpp_target" "$_lpp_source" >> "$_lpp_remaining" || true
+                    _lpp_failed=1
+                fi
+            elif [ -e "$_lpp_target" ]; then
+                : # The target already exists; preserve it and retire only our stale record.
+            else
+                mkdir -p "$_lpp_target" 2>/dev/null || {
+                    printf '%s|%s\n' "$_lpp_target" "$_lpp_source" >> "$_lpp_remaining" || true
+                    _lpp_failed=1
+                }
             fi
-            [ -e "$_lpp_target" ] || mkdir -p "$_lpp_target" 2>/dev/null || true
         done < "$_lpp_symlinks"
+        if [ "$_lpp_failed" -eq 0 ]; then
+            mv -f "$_lpp_remaining" "$_lpp_symlinks" 2>/dev/null || _lpp_failed=1
+        else
+            cp -f "$_lpp_remaining" "$_lpp_symlinks" 2>/dev/null || true
+        fi
+        rm -f "$_lpp_remaining" 2>/dev/null || true
     fi
-    : > "$_lpp_symlinks" 2>/dev/null || true
+    [ "$_lpp_failed" -eq 0 ] || return 1
     return 0
 }

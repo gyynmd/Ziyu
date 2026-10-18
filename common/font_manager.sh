@@ -78,6 +78,14 @@ stock_scan_lock_release() {
     rmdir "$STOCK_SCAN_LOCK" 2>/dev/null || true
 }
 
+stock_scan_guard_complete() {
+    [ -f "$MODDIR/common/boot_ota_guard.sh" ] || return 0
+    MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/boot_ota_guard.sh" scan-complete "$MODDIR" \
+        >> "$MODDIR/logs/boot-ota-guard.log" 2>&1 || \
+        printf '[%s] [BOOT-OTA-GUARD] fresh stock inventory could not be committed to OTA receipt\n' \
+            "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown)" >> "$MODDIR/logs/boot-ota-guard.log" 2>/dev/null || true
+}
+
 stock_scan_json() {
     if ! stock_scan_available; then
         printf '{"status":"error","message":"%s"}\n' "$(json_escape_router '原厂字体扫描组件不完整')"
@@ -101,6 +109,7 @@ stock_scan_json() {
         _stock_rc=$?
         if [ "$_stock_rc" -eq 0 ]; then
             rm -f "$MODDIR/config/stock_inventory_scan_pending" 2>/dev/null || true
+            stock_scan_guard_complete
             stock_scan_lock_release
             trap - EXIT HUP INT TERM
             stock_topology_refresh
@@ -122,6 +131,7 @@ stock_scan_json() {
     _stock_last=$(printf '%s\n' "$_stock_out" | tail -n1)
     if [ "$_stock_rc" -eq 0 ] && [ -s "$STOCK_INVENTORY" ]; then
         rm -f "$MODDIR/config/stock_inventory_scan_pending" 2>/dev/null || true
+        stock_scan_guard_complete
         stock_scan_lock_release
         trap - EXIT HUP INT TERM
         stock_topology_refresh

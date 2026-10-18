@@ -31,6 +31,15 @@ _uvr_log() {
     printf '[%s] [UNIVERSAL-VERIFY] %s\n' "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown)" "$*" >> "$LOG_FILE" 2>/dev/null || true
 }
 
+_uvr_guard_action() {
+    _uvr_action="$1"
+    _uvr_reason="${2:-}"
+    [ -f "$MODDIR/common/boot_ota_guard.sh" ] || return 0
+    MODDIR="$MODDIR" MODULE_DIR="$MODDIR" \
+        sh "$MODDIR/common/boot_ota_guard.sh" "$_uvr_action" "$MODDIR" "$_uvr_reason" \
+        >> "$LOG_FILE" 2>&1
+}
+
 _uvr_value() {
     sed -n "s/^${2}=//p" "$1" 2>/dev/null | head -n1 | tr -d '\r\n'
 }
@@ -142,6 +151,7 @@ _uvr_terminal_failure() {
     } > "$OUTPUT_CONF.tmp.$$" 2>/dev/null && mv -f "$OUTPUT_CONF.tmp.$$" "$OUTPUT_CONF" 2>/dev/null || true
     chmod 0644 "$OUTPUT_CONF" 2>/dev/null || true
     _uvr_log "FAIL reason=$_uvr_reason font=$_uvr_font"
+    _uvr_guard_action apply-failed "universal-verification:${_uvr_reason:-failed}" || true
     if [ "${LUOSHU_VERIFY_NO_CUTOVER:-0}" != 1 ]; then
         [ -f "$CUTOVER_CONTROLLER" ] && MODDIR="$MODDIR" MODULE_DIR="$MODDIR" \
             sh "$CUTOVER_CONTROLLER" rollback-from-fail "$_uvr_boot" >> "$LOG_FILE" 2>&1 || true
@@ -221,10 +231,18 @@ _uvr_run() {
     _uvr_log "result=${_uvr_grade:-FAIL} reason=${_uvr_reason:-unknown} font=$_uvr_font rc=$_uvr_rc"
 
     if [ "$_uvr_grade" = PASS ]; then
-        _uvr_cleanup_retired_on_pass
+        if ! _uvr_guard_action apply-verified; then
+            _uvr_guard_action apply-failed universal-verification-identity-mismatch || true
+            _uvr_log 'PASS evidence did not match the approved boot generation; retained rollback payload'
+        else
+            _uvr_cleanup_retired_on_pass
+        fi
     elif [ "$_uvr_grade" = FAIL ] && [ -f "$CUTOVER_CONTROLLER" ] && [ "${LUOSHU_VERIFY_NO_CUTOVER:-0}" != 1 ]; then
+        _uvr_guard_action apply-failed "universal-verification:${_uvr_reason:-failed}" || true
         MODDIR="$MODDIR" MODULE_DIR="$MODDIR" \
             sh "$CUTOVER_CONTROLLER" rollback-from-fail "$_uvr_boot" >> "$LOG_FILE" 2>&1 || true
+    elif [ "$_uvr_grade" = FAIL ]; then
+        _uvr_guard_action apply-failed "universal-verification:${_uvr_reason:-failed}" || true
     fi
     rm -f "$PID_FILE" 2>/dev/null || true
     return "$_uvr_rc"

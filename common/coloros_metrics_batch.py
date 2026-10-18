@@ -22,11 +22,31 @@ from hyperos_metrics_batch import (bitmap_bottom_slot, contract_for_slot, link_c
                                   read_inventory, write_metrics)
 
 
-def eligible_slot(slot: object, logical: str) -> bool:
+def osans_digits_enabled(module: Path) -> bool:
+    enabled = True
+    try:
+        lines = (module / 'config' / 'coloros_slot_groups.conf').read_text(encoding='utf-8', errors='replace').splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        line = line.split('#', 1)[0].strip()
+        key, separator, value = line.partition('=')
+        if separator and key.strip() == 'osans_digits' and value.strip() in {'0', '1'}:
+            enabled = value.strip() == '1'
+    return enabled
+
+
+def eligible_slot(slot: object, logical: str, digits_enabled: bool = True) -> bool:
     if not isinstance(slot, dict) or slot.get('path', logical) != logical:
         return False
     name = Path(logical).name
-    if any(token in name.lower() for token in ('emoji', 'symbol', 'icon', 'math', 'music', 'serif', 'mono')):
+    lowered = name.lower()
+    if lowered.startswith(('osans-rc', 'osans-ext')):
+        return False
+    if (lowered.startswith('osans-') and 'digits' in lowered
+            and lowered.endswith(('.ttf', '.otf')) and not digits_enabled):
+        return False
+    if any(token in lowered for token in ('emoji', 'symbol', 'icon', 'math', 'music', 'serif', 'mono')):
         return False
     families = slot.get('families', [])
     return _heuristic_candidate(name) or (
@@ -56,6 +76,7 @@ def build(module: Path, stage: Path) -> dict:
     if not stage.is_dir():
         raise ValueError('ColorOS 字体暂存目录不存在')
     inventory = read_inventory(module)
+    digits_enabled = osans_digits_enabled(module)
     indexed = inventory.get('slots', {})
     if not isinstance(indexed, dict):
         indexed = {}
@@ -73,7 +94,7 @@ def build(module: Path, stage: Path) -> dict:
             report = {'slot': logical, 'metricsSource': 'preserved'}
             reports.append(report)
             slot = indexed.get(logical)
-            if not eligible_slot(slot, logical):
+            if not eligible_slot(slot, logical, digits_enabled):
                 report['reason'] = 'missing-or-ineligible-stock-slot'
                 continue
             contract = contract_for_slot(inventory, logical)

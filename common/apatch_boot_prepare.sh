@@ -125,6 +125,22 @@ ziyu_apatch_boot_ready() (
 
 ziyu_apatch_boot_prepare() (
     _zap_prepare_module="$1"
+    if [ -f "$_zap_prepare_module/common/boot_ota_guard.sh" ]; then
+        MODDIR="$_zap_prepare_module" MODULE_DIR="$_zap_prepare_module" \
+            sh "$_zap_prepare_module/common/boot_ota_guard.sh" hook "$_zap_prepare_module" >> "$_zap_prepare_module/logs/boot-ota-guard.log" 2>&1
+        _zap_guard_rc=$?
+        case "$_zap_guard_rc" in
+            0) ;;
+            10|12)
+                _zap_log "$_zap_prepare_module" "pre-scan stopped by boot guard rc=$_zap_guard_rc; owned disable prevents provider scan"
+                return 0
+                ;;
+            *)
+                _zap_log "$_zap_prepare_module" "boot guard failed rc=$_zap_guard_rc; refusing APatch provider preparation"
+                return 1
+                ;;
+        esac
+    fi
     _zap_identity && _zap_module_safe "$_zap_prepare_module" || return 1
     # APatch carries active disable/remove flags into the pending installation.
     # Respect them here too, before that manager-owned move has happened.

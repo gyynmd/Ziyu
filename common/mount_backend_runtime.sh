@@ -565,6 +565,26 @@ _lbr_try_auto_self_fallback() {
 luoshu_mount_backend_hook() {
     _lbr_stage="$1"
     mkdir -p "$MODDIR/config" "$MODDIR/logs" || return 1
+    if [ -f "$MODDIR/common/boot_ota_guard.sh" ]; then
+        MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/boot_ota_guard.sh" hook "$MODDIR" \
+            >> "$MODDIR/logs/boot-ota-guard.log" 2>&1
+        _lbr_guard_rc=$?
+        case "$_lbr_guard_rc" in
+            0) ;;
+            10|12)
+                _lbr_guard_reason=ota-fingerprint-change
+                [ "$_lbr_guard_rc" != 10 ] || _lbr_guard_reason=boot-safety-safe-mode
+                _lbr_write_state unresolved none 0 blocked blocked "$_lbr_stage" failed "$_lbr_guard_reason" || return 1
+                _lbr_log "mount/backend scan stopped before provider detection: $_lbr_guard_reason"
+                return 0
+                ;;
+            *)
+                _lbr_write_state unresolved none 0 blocked blocked "$_lbr_stage" failed boot-guard-failed || return 1
+                _lbr_log 'boot guard failed; provider detection refused'
+                return 1
+                ;;
+        esac
+    fi
     if [ -e "$MODDIR/config/font-live-transaction.conf" ]; then
         _lbr_log 'live transaction in progress or requires recovery; boot backend verification deferred'
         return 0

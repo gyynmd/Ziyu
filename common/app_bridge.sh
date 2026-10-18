@@ -26,6 +26,7 @@ MINIMAL_XML_ROUTER="$MODDIR/common/minimal_xml_router.sh"
 UNIVERSAL_COMPILER="$MODDIR/common/universal_font_compiler.sh"
 UNIVERSAL_DEPLOYMENT="$MODDIR/common/universal_font_deployment.sh"
 UNIVERSAL_VERIFY="$MODDIR/common/universal_font_runtime_verify.sh"
+FONT_COVERAGE_LOCATOR="$MODDIR/common/font_coverage_locator.py"
 PYROOT="$MODDIR/common/python"
 PYBIN="$PYROOT/bin/luoshu-python"
 USER_FONTS_DIR="${LUOSHU_PUBLIC_DIR:-/sdcard/LuoShu}/fonts"
@@ -359,6 +360,44 @@ EOF_TASK_SELECTION
         _font_effect_state=unverified
     fi
 
+    # Guard status is read-only. A blocked current boot must not inherit a
+    # previous generation's verified result from the backend/activation files.
+    _boot_guard_status=''
+    if [ -f "$MODDIR/config/boot-safety-current-boot.conf" ] &&
+       [ ! -L "$MODDIR/config/boot-safety-current-boot.conf" ] &&
+       [ -f "$MODDIR/common/boot_ota_guard.sh" ] &&
+       _boot_guard_status=$(sh "$MODDIR/common/boot_ota_guard.sh" status "$MODDIR" 2>/dev/null); then
+        _boot_guard_api=''; _boot_guard_blocked=0; _boot_guard_reason=''; _boot_guard_next_ready=0
+        while IFS= read -r _boot_guard_line || [ -n "$_boot_guard_line" ]; do
+            _boot_guard_line=${_boot_guard_line%"$_APP_BRIDGE_CR"}
+            case "$_boot_guard_line" in
+                status=ok) _boot_guard_api=ok ;;
+                current_boot_blocked=1) _boot_guard_blocked=1 ;;
+                next_generation_ready=1) _boot_guard_next_ready=1 ;;
+                reason=boot-safety-safe-mode|reason=ota-fingerprint-change|reason=safe-mode|reason=ota-fingerprint)
+                    _boot_guard_reason=${_boot_guard_line#reason=} ;;
+            esac
+        done <<EOF_ZIYU_BOOT_GUARD_STATUS
+$_boot_guard_status
+EOF_ZIYU_BOOT_GUARD_STATUS
+        if [ "$_boot_guard_api" = ok ] && [ "$_boot_guard_blocked" = 1 ]; then
+            _effective_active=unknown
+            _font_effect_state=failed
+            _verification_state=failed
+            _verification_grade=none
+            _verification_mode=boot-protection
+            _verification_reason=${_boot_guard_reason:-boot-safety-blocked}
+            _mount_state=blocked
+            if [ "$_boot_guard_next_ready" = 1 ] &&
+               { [ "$_boot_guard_reason" = ota-fingerprint-change ] || [ "$_boot_guard_reason" = ota-fingerprint ]; }; then
+                _font_effect_state=pending-reboot
+                _verification_state=pending
+                _verification_reason=ota-generation-prepared
+                _reboot_required=true
+            fi
+        fi
+    fi
+
     printf '{"status":"ok","data":{"root":true,"installed":%s,"version":"%s","versionCode":%s,"active":"%s","effectiveActive":"%s","fontEffectState":"%s","verificationState":"%s","verificationGrade":"%s","verificationMode":"%s","verificationReason":"%s","mountState":"%s","mountFailure":"%s","cutoverState":"%s","cutoverDecision":"%s","rollbackState":"%s","rollbackPending":%s,"rollbackTargetFont":"%s","rollbackTargetMode":"%s","taskType":"%s","taskId":"%s","taskState":"%s","taskMessage":"%s","taskProgress":%s,"rebootRequired":%s,"temporaryRootMode":%s,"rootManager":"%s","mountEngine":"%s","moduleDir":"%s"}}\n' \
         "$_installed" "$(json_escape "$_version")" "${_version_code:-0}" "$(json_escape "$_active")" \
         "$(json_escape "$_effective_active")" "$(json_escape "$_font_effect_state")" \
@@ -488,6 +527,28 @@ weight_axis_info() {
 }
 
 case "${1:-status}" in
+    boot_safety)
+        [ "$#" -eq 2 ] || { printf 'status=error\nreason=invalid-arguments\n'; exit 2; }
+        case "$2" in status|recover|rescan) ;; *) printf 'status=error\nreason=invalid-action\n'; exit 2 ;; esac
+        [ -f "$MODDIR/common/boot_ota_guard.sh" ] || { printf 'status=error\nreason=helper-missing\n'; exit 1; }
+        exec sh "$MODDIR/common/boot_ota_guard.sh" "$2" "$MODDIR"
+        ;;
+    app_coverage)
+        [ -x "$PYBIN" ] && [ -f "$FONT_COVERAGE_LOCATOR" ] || { printf '{"status":"error","message":"应用字体诊断组件不可用"}\n'; exit 1; }
+        case "${2:-}" in
+            running|scan)
+                [ "$#" -eq 2 ] || { printf '{"status":"error","message":"诊断参数无效"}\n'; exit 1; }
+                ;;
+            locate)
+                [ "$#" -eq 3 ] || { printf '{"status":"error","message":"诊断参数无效"}\n'; exit 1; }
+                ;;
+            *) printf '{"status":"error","message":"未知应用字体诊断命令"}\n'; exit 1 ;;
+        esac
+        export MODDIR MODULE_DIR="$MODDIR" PYTHONHOME="$PYROOT"
+        export PYTHONPATH="$MODDIR/common:$PYROOT/lib/python3.14:$PYROOT/lib/python3.14/site-packages"
+        export LD_LIBRARY_PATH="$PYROOT/lib:$PYROOT/lib/python3.14/lib-dynload${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        exec "$PYBIN" "$FONT_COVERAGE_LOCATOR" "$2" "${3:-}"
+        ;;
     app_reads)
         [ -x "$PYBIN" ] && [ -f "$MODDIR/common/app_read_batch.py" ] || exit 127
         export MODDIR MODULE_DIR="$MODDIR" PYTHONHOME="$PYROOT"

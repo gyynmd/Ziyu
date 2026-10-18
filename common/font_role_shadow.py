@@ -17,8 +17,10 @@ from typing import Any
 
 ROLE_SCHEMA = "device-font-roles-v1"
 PLAN_SCHEMA = "device-font-shadow-plan-v1"
-ROLE_REVISION = 1
+ROLE_REVISION = 2
 PLAN_REVISION = 1
+COLOROS_POLICY_REVISION = 1
+COLOROS_DIGIT_NAME = re.compile(r"^OSans-[A-Za-z0-9_.-]*Digits[A-Za-z0-9_.-]*\.(?:ttf|otf)$", re.IGNORECASE)
 
 PROTECTED_ROLES = {"emoji", "symbol-icon", "serif", "monospace", "special-fallback"}
 CANDIDATE_ROLES = {"ui-sans", "cjk", "latin"}
@@ -262,9 +264,92 @@ def _runtime_confirmed(slot: dict[str, Any]) -> bool:
     return isinstance(evidence, dict) and any(value is True for value in evidence.values())
 
 
+def _trusted_physical_stock_metadata(slot: dict[str, Any]) -> bool:
+    """Require a known stock scanner, a matching format, and valid design metrics."""
+    if slot.get("validatedBy") not in {
+        "fontTools-stock-metrics",
+        "fontTools-generic-stock-scan",
+        "font_check.sh",
+    }:
+        return False
+    font_format = str(slot.get("format") or "").upper()
+    if font_format not in {"TTF", "OTF", "TTC"}:
+        return False
+    if str(slot.get("validatedFormat") or "").upper() != font_format:
+        return False
+    metrics = slot.get("metrics")
+    if not isinstance(metrics, dict):
+        return False
+
+    def metric_int(value: Any) -> int | None:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and re.fullmatch(r"[+-]?\d+", value.strip()):
+            return int(value)
+        return None
+
+    hhea = metrics.get("hhea")
+    if not isinstance(hhea, dict):
+        return False
+    upem = metric_int(metrics.get("upem"))
+    ascent = metric_int(hhea.get("ascent"))
+    descent = metric_int(hhea.get("descent"))
+    if upem is None or not 16 <= upem <= 16384:
+        return False
+    if ascent is None or not 0 < ascent <= 32767:
+        return False
+    if descent is None or not -32768 <= descent <= 0:
+        return False
+
+    head = metrics.get("head")
+    if head is not None:
+        if not isinstance(head, dict):
+            return False
+        bounds = [metric_int(head.get(name)) for name in ("xMin", "yMin", "xMax", "yMax")]
+        if any(value is None or not -32768 <= value <= 32767 for value in bounds):
+            return False
+        x_min, y_min, x_max, y_max = bounds
+        if x_min > x_max or y_min > y_max:
+            return False
+    return True
+
+
+def _coloros_groups(path: Path | None) -> frozenset[str]:
+    """Read the small optional ColorOS slot-group file; digits are on by default."""
+    enabled = {"osans_digits": True}
+    if path is not None:
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            lines = []
+        for line in lines:
+            line = line.split("#", 1)[0].strip()
+            key, separator, value = line.partition("=")
+            key, value = key.strip(), value.strip()
+            if separator and key == "osans_digits" and value in ("0", "1"):
+                enabled[key] = value == "1"
+    return frozenset(name for name, active in enabled.items() if active)
+
+
+def _coloros_osans_kind(path: str, slot: dict[str, Any]) -> str:
+    """Return a narrow ColorOS policy class based on the physical basename."""
+    name = str(slot.get("slotName") or Path(path).name)
+    lowered = name.lower()
+    if lowered.startswith(("osans-rc", "osans-ext")):
+        return "keep"
+    if COLOROS_DIGIT_NAME.fullmatch(name):
+        return "digits"
+    return ""
+
+
 def _classification(
     path: str,
     slot: dict[str, Any],
+    *,
+    coloros: bool = False,
+    enabled_groups: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     families = _families(slot)
     text = _evidence_text(path, slot)
@@ -275,6 +360,12 @@ def _classification(
     has_latin = _coverage_bool(coverage, "hasLatin") or _coverage_count(coverage, "latinCount") > 0
     has_digits = _coverage_bool(coverage, "hasDigits") or _coverage_count(coverage, "digitCount") > 0
     runtime = _runtime_confirmed(slot)
+    osans_kind = _coloros_osans_kind(path, slot) if coloros else ""
+    physical_stock_metadata_trusted = (
+        coloros
+        and str(slot.get("source") or "") == "physical-scan"
+        and _trusted_physical_stock_metadata(slot)
+    )
 
     reasons: list[str] = []
     evidence: dict[str, Any] = {
@@ -290,6 +381,7 @@ def _classification(
         },
         "runtimeConfirmed": runtime,
         "source": str(slot.get("source") or ""),
+        "stockMetadataVerified": physical_stock_metadata_trusted,
         "sourceXmls": list(slot.get("sourceXmls") or []),
     }
 
@@ -297,7 +389,11 @@ def _classification(
     confidence = 35
 
     # Explicit XML monospace semantics beat OEM filenames such as MitypeMono.
-    if _explicit_mono_family(families):
+    if osans_kind == "keep":
+        role = "special-fallback"
+        confidence = 100
+        reasons.append("coloros-osans-rare-or-placeholder-stock")
+    elif _explicit_mono_family(families):
         role = "monospace"
         confidence = 100
         reasons.append("explicit-monospace-family")
@@ -321,6 +417,10 @@ def _classification(
         role = "monospace"
         confidence = 88
         reasons.append("monospace-file-identity")
+    elif osans_kind == "digits":
+        role = "numeric"
+        confidence = 96
+        reasons.append("coloros-osans-digit-family")
     elif _contains_phrase(text, CLOCK_TOKENS):
         role = "clock"
         confidence = 95 if families else 85
@@ -405,6 +505,17 @@ def _classification(
     else:
         action = "review"
 
+    if osans_kind == "digits" and "osans_digits" not in enabled_groups:
+        action = "preserve"
+        reasons.append("coloros-osans-digit-group-disabled")
+    if (coloros and str(slot.get("source") or "") == "physical-scan"
+            and not physical_stock_metadata_trusted):
+        # Candidate discovery can retain a dangling/cyclic pathname for topology,
+        # but without a known scanner, format, and valid metrics it has no trusted
+        # stock content contract. Keep it visible without treating the link as proof.
+        action = "preserve"
+        reasons.append("coloros-physical-slot-stock-content-unverified")
+
     current_replaceable = slot.get("legacyReplaceable")
     if not isinstance(current_replaceable, bool):
         current_replaceable = slot.get("replaceable")
@@ -430,7 +541,11 @@ def _classification(
     }
 
 
-def validate_role_map(value: dict[str, Any], expected_build_key: str | None = None) -> None:
+def validate_role_map(
+    value: dict[str, Any],
+    expected_build_key: str | None = None,
+    expected_coloros_policy: dict[str, Any] | None = None,
+) -> None:
     if value.get("schema") != ROLE_SCHEMA or value.get("state") != "ready":
         raise RoleError("字体角色映射格式无效")
     if int(value.get("roleRevision", 0)) != ROLE_REVISION:
@@ -440,6 +555,8 @@ def validate_role_map(value: dict[str, Any], expected_build_key: str | None = No
     slots = value.get("slots")
     if not isinstance(slots, dict):
         raise RoleError("字体角色映射缺少 slots")
+    if expected_coloros_policy is not None and value.get("colorosPolicy") != expected_coloros_policy:
+        raise RoleError("ColorOS 字体分组策略已变化，请重新生成角色映射")
 
 
 def validate_plan(value: dict[str, Any], expected_build_key: str | None = None) -> None:
@@ -453,12 +570,23 @@ def validate_plan(value: dict[str, Any], expected_build_key: str | None = None) 
         raise RoleError("Shadow 计划不得修改系统")
 
 
-def build(topology: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def build(
+    topology: dict[str, Any],
+    coloros_groups: frozenset[str] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     if topology.get("schema") != "device-font-topology-v1" or topology.get("state") != "ready":
         raise RoleError("设备字体拓扑尚未就绪")
     raw_slots = topology.get("slots")
     if not isinstance(raw_slots, dict):
         raise RoleError("设备字体拓扑缺少 slots")
+
+    coloros = str(topology.get("romKind") or "generic").lower() == "coloros"
+    groups = coloros_groups if coloros_groups is not None else frozenset({"osans_digits"})
+    coloros_policy = ({
+        "schema": "coloros-latin-policy-v1",
+        "revision": COLOROS_POLICY_REVISION,
+        "enabledGroups": sorted(groups),
+    } if coloros else None)
 
     role_slots: dict[str, dict[str, Any]] = {}
     counts: dict[str, int] = {}
@@ -469,7 +597,7 @@ def build(topology: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         slot = raw_slots[path]
         if not isinstance(slot, dict):
             continue
-        classified = _classification(path, slot)
+        classified = _classification(path, slot, coloros=coloros, enabled_groups=groups)
         role_slots[path] = classified
         counts[classified["role"]] = counts.get(classified["role"], 0) + 1
         action_counts[classified["action"]] = action_counts.get(classified["action"], 0) + 1
@@ -484,6 +612,7 @@ def build(topology: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         "generatedAt": int(time.time()),
         "buildKey": build_key,
         "romKind": rom_kind,
+        **({"colorosPolicy": coloros_policy} if coloros_policy is not None else {}),
         "topologyRevision": topology.get("topologyRevision"),
         "summary": {
             "slotCount": len(role_slots),
@@ -552,6 +681,7 @@ def main() -> int:
     parser.add_argument("--topology", type=Path, required=True)
     parser.add_argument("--roles-output", type=Path, required=True)
     parser.add_argument("--plan-output", type=Path, required=True)
+    parser.add_argument("--slot-groups", type=Path)
     parser.add_argument("--validate", action="store_true")
     args = parser.parse_args()
 
@@ -561,10 +691,17 @@ def main() -> int:
         if args.validate:
             role_map = _load(args.roles_output)
             plan = _load(args.plan_output)
-            validate_role_map(role_map, build_key)
+            current_coloros_policy = None
+            if str(topology.get("romKind") or "generic").lower() == "coloros":
+                current_coloros_policy = {
+                    "schema": "coloros-latin-policy-v1",
+                    "revision": COLOROS_POLICY_REVISION,
+                    "enabledGroups": sorted(_coloros_groups(args.slot_groups)),
+                }
+            validate_role_map(role_map, build_key, current_coloros_policy)
             validate_plan(plan, build_key)
         else:
-            role_map, plan = build(topology)
+            role_map, plan = build(topology, _coloros_groups(args.slot_groups))
             _atomic_write(args.roles_output, role_map)
             _atomic_write(args.plan_output, plan)
     except (RoleError, OSError, ValueError) as error:

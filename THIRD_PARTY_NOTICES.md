@@ -87,3 +87,13 @@ v1.3.3 新增的 `common/font_scan_profile.py` 和 `common/stock_font_snapshot.p
 - 使用这些字体生成的复合输出中由原字体权利人拥有的字形数据。
 
 使用者必须自行确认字体的使用、修改和再分发权限。不要在 Issue、PR、Release 或其他公开渠道上传无授权字体。
+
+
+## LuoShu main 2026-10-13 分项移植（字域 v1.4.2）
+
+- 来源：[LuoShu main `cd90150bb6bfa8081c639e684d421c317e5d436a`](https://github.com/xgl34222220-ops/LuoShu/tree/cd90150bb6bfa8081c639e684d421c317e5d436a)，GPL-3.0-only；完整许可证见 `licenses/LuoShu-main-20261013-GPL-3.0.txt`。
+- 按字体真实声明读取轴、隐藏轴标记、轴名与范围校验、成功元数据缓存及相关回归源自 `4dead61b`；字域保留自己的字体预览与三种主题控件，并增加读取期间源变化核对。
+- 本次 ColorOS 覆盖、App 筛选与轮询/前台服务、只读应用字体来源审计的参考分别为上游 PR #294、#289、#283/#293。实现按字域现有原厂快照、挂载、热切换、任务及三主题设置路径适配。
+- `common/composite_collection_build.py`、`composite_collection_contract.py` 及 Shell 入口参考上游组合字体集合方向，基于字域现有组合输出、fontTools 与可信原厂快照实现逐面构建/证明校验；代码按本仓库 GPL-3.0-only 授权，字体数据的权利仍属于原权利人。
+- `common/boot_ota_guard.sh` 及设置入口为按字域现有启动、任务监督、切换事务和挂载验证路径编写的启动/OTA 保护适配，按本仓库 GPL-3.0-only 授权；不复制或接管 Root 管理器挂载实现。
+- 完整移植范围、验收证据与手机待测项见本次版本说明和 `docs/UPSTREAM_PORT_20261018.md`；不把上游未发布 main 或其历史设备观察当作字域当前版本手机验收。

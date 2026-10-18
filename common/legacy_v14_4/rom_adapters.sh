@@ -80,6 +80,61 @@ _rom_font_target_exists() {
     return 1
 }
 
+# ColorOS may expose dangling/cyclic SysFont links in its writable namespace.
+# Their pathnames remain eligible overlay slots, but their link presence does not
+# prove that any referenced stock font contents were readable or trusted.
+_coloros_exact_target_exists() {
+    _cete_file="$1"
+    for _cete_root in /system/fonts /system_ext/fonts /product/fonts; do
+        [ -e "$_cete_root/$_cete_file" ] || [ -L "$_cete_root/$_cete_file" ] || continue
+        [ -d "$_cete_root/$_cete_file" ] && continue
+        return 0
+    done
+    return 1
+}
+
+_coloros_font_target_exists() {
+    _cft_name="$1"
+    _coloros_exact_target_exists "${_cft_name}.ttf" || \
+        _coloros_exact_target_exists "${_cft_name}.otf" || \
+        _coloros_exact_target_exists "${_cft_name}.ttc"
+}
+
+_legacy_coloros_digits_enabled() {
+    if type _coloros_osans_digits_enabled >/dev/null 2>&1; then
+        _coloros_osans_digits_enabled
+        return $?
+    fi
+    _lcde_module="${MODULE_DIR:-${MODDIR:-/data/adb/modules/LuoShu}}"
+    _lcde_enabled=1
+    _lcde_groups="$_lcde_module/config/coloros_slot_groups.conf"
+    if [ -r "$_lcde_groups" ]; then
+        while IFS= read -r _lcde_line || [ -n "$_lcde_line" ]; do
+            _lcde_line=$(printf '%s' "$_lcde_line" | tr -d '\r' | sed 's/#.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+            case "$_lcde_line" in *=*) ;; *) continue ;; esac
+            _lcde_key=$(printf '%s' "${_lcde_line%%=*}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            _lcde_value=$(printf '%s' "${_lcde_line#*=}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            [ "$_lcde_key" = osans_digits ] || continue
+            case "$_lcde_value" in
+                0) _lcde_enabled=0 ;;
+                1) _lcde_enabled=1 ;;
+            esac
+        done < "$_lcde_groups"
+    fi
+    printf '%s\n' "$_lcde_enabled"
+}
+
+_coloros_osans_digit_names() {
+    for _codn_root in /system/fonts /system_ext/fonts /product/fonts; do
+        for _codn_path in "$_codn_root"/OSans-*Digits*.ttf "$_codn_root"/OSans-*Digits*.otf; do
+            [ -e "$_codn_path" ] || [ -L "$_codn_path" ] || continue
+            [ -d "$_codn_path" ] && continue
+            _codn_name=${_codn_path##*/}
+            printf '%s\n' "$_codn_name"
+        done
+    done | awk 'NF && !seen[$0]++'
+}
+
 _rom_exact_target_exists() {
     _file="$1"
     for _root in /system/fonts /system_ext/fonts /product/fonts /my_product/fonts /vendor/fonts; do
@@ -122,6 +177,10 @@ copy_as_coloros() {
     for cname in $(get_all_coloros_names); do
         rm -f "$dest_dir/${cname}.ttf" 2>/dev/null
     done
+    # Remove a previously generated digit alias even when the policy is now off.
+    for cname in $(_coloros_osans_digit_names); do
+        rm -f "$dest_dir/$cname" 2>/dev/null
+    done
     _font_store_reset "$dest_dir"
     regular_anchor=$(_font_anchor "$src" "$dest_dir" "regular") || return 1
 
@@ -129,7 +188,7 @@ copy_as_coloros() {
     base_names="SysSans-Hant-Regular SysSans-Hans-Regular SysFont-Static-Regular SysFont-Hant-Regular SysFont-Hans-Regular SysFont-Regular SysSans-En-Regular"
     bad_count=0
     for name in $base_names; do
-        _rom_font_target_exists "$name" || continue
+        _coloros_font_target_exists "$name" || continue
         if _font_alias "$regular_anchor" "$dest_dir/${name}.ttf"; then
             if _verify_font_copy "$dest_dir/${name}.ttf"; then
                 coloros_count=$((coloros_count + 1))
@@ -142,11 +201,19 @@ copy_as_coloros() {
     [ "$bad_count" -gt 0 ] && _log_step "  ⚠ 其中 $bad_count 个校验异常，请检查源字体文件是否完整"
 
     for name in $(_coloros_extra_names); do
-        _rom_font_target_exists "$name" || continue
+        _coloros_font_target_exists "$name" || continue
         if _font_alias "$regular_anchor" "$dest_dir/${name}.ttf"; then
             extra_count=$((extra_count + 1))
         fi
     done
+    if [ "$(_legacy_coloros_digits_enabled)" = 1 ]; then
+        for name in $(_coloros_osans_digit_names); do
+            _coloros_exact_target_exists "$name" || continue
+            if _font_alias "$regular_anchor" "$dest_dir/$name" && _verify_font_copy "$dest_dir/$name"; then
+                extra_count=$((extra_count + 1))
+            fi
+        done
+    fi
     [ "$extra_count" -gt 0 ] && _log_step "  已覆盖 $extra_count 个额外字体文件（数字/英文粗体等）"
 
     # 多字重支持：如果用户字体族提供了 Bold/Medium/Light 等文件，生成对应字重变体
@@ -161,7 +228,7 @@ copy_as_coloros() {
             w_anchor=$(_font_anchor "$w_file" "$dest_dir" "$w") || continue
             for base in $weight_base; do
                 dest_name="${base}-${w_cap}.ttf"
-                _rom_exact_target_exists "$dest_name" || continue
+                _coloros_exact_target_exists "$dest_name" || continue
                 if _font_alias "$w_anchor" "$dest_dir/$dest_name"; then
                     weight_count=$((weight_count + 1))
                 fi

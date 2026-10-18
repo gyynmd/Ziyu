@@ -100,6 +100,7 @@ def _roles_digest(roles: dict[str, Any]) -> str:
         "roleRevision": roles.get("roleRevision"),
         "buildKey": roles.get("buildKey"),
         "romKind": roles.get("romKind"),
+        "colorosPolicy": roles.get("colorosPolicy"),
         "slots": roles.get("slots"),
     }
     return f"sha256:{_canonical_hash(material)}"
@@ -613,6 +614,15 @@ def _plan_slot(
             reasons=["protected-role"],
         )
         return base
+    if role_action == "preserve":
+        policy_reasons = role_info.get("reasons")
+        base.update(
+            action="preserve",
+            status="ready",
+            reasons=(list(policy_reasons) if isinstance(policy_reasons, list) and policy_reasons
+                     else ["role-policy-preserve"]),
+        )
+        return base
     if role == "unknown-protected" or role_action == "review":
         base.update(
             action="review",
@@ -906,7 +916,9 @@ def validate_plan(
             raise UniversalPlanError(f"受保护字体不得进入替换计划：{path}")
         if role == "unknown-protected" and action != "review":
             raise UniversalPlanError(f"未知字体不得自动替换：{path}")
-        if role in SPECIALIZED_ROLES and action not in {"compile-specialized", "blocked"}:
+        if role in SPECIALIZED_ROLES and action not in {"compile-specialized", "blocked"} and not (
+            action == "preserve" and str(item.get("roleAction") or "") == "preserve"
+        ):
             raise UniversalPlanError(f"Clock/Numeric 不得走普通替换：{path}")
         if role in TEXT_ROLES and action not in {"replace", "compile", "blocked"}:
             raise UniversalPlanError(f"文本目标包含无效动作：{path}")

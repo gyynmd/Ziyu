@@ -617,6 +617,11 @@ if [ "$_cmd" = status ]; then
 fi
 case "$_cmd" in
     start)
+        if [ -f "$REALMOD/common/boot_ota_guard.sh" ] && ! MODDIR="$REALMOD" MODULE_DIR="$REALMOD" \
+            sh "$REALMOD/common/boot_ota_guard.sh" allow-apply "$REALMOD" mix >/dev/null 2>&1; then
+            printf '{"status":"error","message":"开机安全保护当前只允许恢复系统默认字体；OTA 期间请先完成原厂扫描"}\n'
+            exit 1
+        fi
         mkdir -p "$REALMOD/logs" 2>/dev/null || exit 1
         mix_reconcile_fast
         case "$(read_value "$REALMOD/config/axes_task.conf" state)" in

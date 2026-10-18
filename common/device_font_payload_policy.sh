@@ -15,6 +15,30 @@ _device_font_policy_log() {
         >> "$_dfpp_module/logs/device-font-payload.log" 2>/dev/null || true
 }
 
+_device_font_policy_python_run() {
+    _dfppr_module="$(_device_font_policy_module)"
+    if [ -n "${LUOSHU_PYTHON:-}" ]; then
+        "$LUOSHU_PYTHON" "$@"
+        return $?
+    fi
+    _dfppr_root="$_dfppr_module/common/python"
+    [ -x "$_dfppr_root/bin/luoshu-python" ] || return 127
+    PYTHONHOME="$_dfppr_root" \
+    PYTHONPATH="$_dfppr_module/common:$_dfppr_root/lib/python3.14:$_dfppr_root/lib/python3.14/site-packages" \
+    LD_LIBRARY_PATH="$_dfppr_root/lib:$_dfppr_root/lib/python3.14/lib-dynload${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$_dfppr_root/bin/luoshu-python" "$@"
+}
+
+_device_font_coloros_flipfont_hint() {
+    [ "${IS_COLOROS:-false}" = true ] || return 0
+    _dfcfh_module="$(_device_font_policy_module)"
+    _dfcfh_script="$_dfcfh_module/common/coloros_flipfont.py"
+    [ -f "$_dfcfh_script" ] || return 0
+    _dfcfh_result=$(_device_font_policy_python_run "$_dfcfh_script" hint --module-root "$_dfcfh_module" 2>/dev/null) || return 0
+    [ -n "$_dfcfh_result" ] && _device_font_policy_log "$_dfcfh_result"
+    return 0
+}
+
 _device_font_policy_trusted_template_key() {
     if [ -n "${LUOSHU_TRUSTED_TEMPLATE_KEY:-}" ]; then
         printf '%s\n' "$LUOSHU_TRUSTED_TEMPLATE_KEY"
@@ -30,12 +54,36 @@ _device_font_policy_trusted_template_key() {
 }
 
 # Cache ColorOS target discovery by build fingerprint; an OTA invalidates it automatically.
+_device_font_coloros_policy_identity() {
+    _dfcp_module="$(_device_font_policy_module)"
+    _dfcp_enabled=1
+    _dfcp_groups="$_dfcp_module/config/coloros_slot_groups.conf"
+    if [ -r "$_dfcp_groups" ]; then
+        while IFS= read -r _dfcp_line || [ -n "$_dfcp_line" ]; do
+            _dfcp_line=$(printf '%s' "$_dfcp_line" | tr -d '\r' | sed 's/#.*$//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+            case "$_dfcp_line" in *=*) ;; *) continue ;; esac
+            _dfcp_key=$(printf '%s' "${_dfcp_line%%=*}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            _dfcp_value=$(printf '%s' "${_dfcp_line#*=}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            [ "$_dfcp_key" = osans_digits ] || continue
+            case "$_dfcp_value" in
+                0) _dfcp_enabled=0 ;;
+                1) _dfcp_enabled=1 ;;
+            esac
+        done < "$_dfcp_groups"
+    fi
+    printf 'coloros-latin-policy-v1|revision=1|osans_digits=%s\n' "$_dfcp_enabled"
+}
+
 get_all_coloros_files() {
     _dfpp_module="$(_device_font_policy_module)"
     _dfpp_cache="$_dfpp_module/config/coloros-font-targets.cache"
     _dfpp_key="${LUOSHU_COLOROS_CACHE_KEY:-$(getprop ro.build.fingerprint 2>/dev/null)}"
     [ -n "$_dfpp_key" ] || _dfpp_key="$(getprop ro.build.version.incremental 2>/dev/null)"
     [ -n "$_dfpp_key" ] || _dfpp_key=unknown
+    _dfpp_policy_identity=$(_device_font_coloros_policy_identity)
+    _dfpp_digits_enabled=${_dfpp_policy_identity##*osans_digits=}
+    case "$_dfpp_digits_enabled" in 0|1) ;; *) _dfpp_digits_enabled=1 ;; esac
+    _dfpp_key="$_dfpp_key|$_dfpp_policy_identity"
     _dfpp_cached_key=$(sed -n 's/^key=//p' "$_dfpp_cache" 2>/dev/null | head -n1)
     if [ "$_dfpp_cached_key" = "$_dfpp_key" ] && sed -n '2,$p' "$_dfpp_cache" 2>/dev/null | grep -q .; then
         sed -n '2,$p' "$_dfpp_cache" 2>/dev/null
@@ -51,7 +99,15 @@ get_all_coloros_files() {
             if type _coloros_vendor_files >/dev/null 2>&1; then _coloros_vendor_files; fi
             if type _coloros_oem_ui_files >/dev/null 2>&1; then _coloros_oem_ui_files; fi
             if type _coloros_discovered_ui_files >/dev/null 2>&1; then _coloros_discovered_ui_files; fi
-        } | tr ' ' '\n' | awk 'NF && !seen[$0]++'
+        } | tr ' ' '\n' | awk 'NF && !seen[$0]++' | while IFS= read -r _dfpp_file; do
+            case "$_dfpp_file" in
+                OSans-RC*|OSans-Ext*) continue ;;
+                OSans-*Digits*.ttf|OSans-*Digits*.otf)
+                    [ "$_dfpp_digits_enabled" = 1 ] || continue
+                    ;;
+            esac
+            printf '%s\n' "$_dfpp_file"
+        done
     } > "$_dfpp_tmp" 2>/dev/null || { rm -f "$_dfpp_tmp" 2>/dev/null || true; return 1; }
     mv -f "$_dfpp_tmp" "$_dfpp_cache" 2>/dev/null || { rm -f "$_dfpp_tmp" 2>/dev/null || true; return 1; }
     chmod 0644 "$_dfpp_cache" 2>/dev/null || true
@@ -104,9 +160,13 @@ _device_font_fast_alias_roots() {
     _dffar_module="$(_device_font_policy_module)"
     _dffar_count=0
     if [ "${IS_COLOROS:-false}" = true ]; then
-        _dffar_roots="/system/fonts|$_dffar_module/system/fonts
+        if type _luoshu_coloros_root_pairs >/dev/null 2>&1; then
+            _dffar_roots=$(_luoshu_coloros_root_pairs)
+        else
+            _dffar_roots="/system/fonts|$_dffar_module/system/fonts
 /system_ext/fonts|$_dffar_module/system_ext/fonts
 /product/fonts|$_dffar_module/product/fonts"
+        fi
     else
         _dffar_roots="/system/fonts|$_dffar_module/system/fonts
 /system_ext/fonts|$_dffar_module/system_ext/fonts
@@ -120,7 +180,14 @@ _device_font_fast_alias_roots() {
 /hw_product/fonts|$_dffar_module/hw_product/fonts"
     fi
     while IFS='|' read -r _dffar_real _dffar_overlay; do
-        [ -e "$_dffar_real/$_dffar_file" ] || continue
+        if [ "${IS_COLOROS:-false}" = true ]; then
+            # A ColorOS dangling/cyclic symlink still names a physical overlay slot.
+            # This is only target eligibility; source bytes are validated separately.
+            [ -e "$_dffar_real/$_dffar_file" ] || [ -L "$_dffar_real/$_dffar_file" ] || continue
+        else
+            [ -e "$_dffar_real/$_dffar_file" ] || continue
+        fi
+        [ -d "$_dffar_real/$_dffar_file" ] && continue
         mkdir -p "$_dffar_overlay" 2>/dev/null || continue
         rm -f "$_dffar_overlay/$_dffar_file" 2>/dev/null || true
         if ln "$_dffar_anchor" "$_dffar_overlay/$_dffar_file" 2>/dev/null ||            cp -f "$_dffar_anchor" "$_dffar_overlay/$_dffar_file" 2>/dev/null; then
@@ -162,6 +229,9 @@ _device_font_fast_map() {
         _dffm_files='Roboto-Regular.ttf Roboto-Medium.ttf Roboto-Bold.ttf NotoSans-Regular.ttf'
     fi
 
+    if [ "${IS_COLOROS:-false}" = true ] && type _coloros_remove_digit_overlays >/dev/null 2>&1; then
+        _coloros_remove_digit_overlays
+    fi
     for _dffm_file in $_dffm_files; do
         _dffm_added=$(_device_font_fast_alias_roots "$_dffm_anchor" "$_dffm_file")
         case "$_dffm_added" in ''|*[!0-9]*) _dffm_added=0 ;; esac
@@ -218,6 +288,7 @@ apply_font_by_rom() {
             fi
         fi
         [ "$_dfabr_inventory_mapped" -eq 1 ] || _device_font_fast_map "$_dfabr_src" "$_dfabr_family" || return 1
+        _device_font_coloros_flipfont_hint
         # This function only stages the source anchors. The outer switch transaction calls
         # font_config_enable_for_payload exactly once after every ROM adapter has finished.
         # Calling it here as well made a single tap enter the full device builder twice.
@@ -227,6 +298,7 @@ apply_font_by_rom() {
     if type _copy_as_inventory >/dev/null 2>&1 && \
        _copy_as_inventory "$_dfabr_src" "$_dfabr_dest" "$_dfabr_mode" "$_dfabr_family"; then
         _device_font_policy_log "已按设备清单完成真实槽位映射：$_dfabr_family mode=$_dfabr_mode"
+        _device_font_coloros_flipfont_hint
         return 0
     fi
 
@@ -237,6 +309,9 @@ apply_font_by_rom() {
     else
         copy_as_generic "$_dfabr_src" "$_dfabr_dest" "$_dfabr_mode"
     fi
+    _dfabr_result=$?
+    [ "$_dfabr_result" -eq 0 ] && _device_font_coloros_flipfont_hint
+    return "$_dfabr_result"
 }
 
 # Keep the safety contract, but use stat for font aliases instead of reading the same inode dozens

@@ -5,6 +5,31 @@ MODDIR="${0%/*}"
 MODULE_DIR="$MODDIR"
 mkdir -p "$MODDIR/logs" || exit 1
 
+# Resolve boot-loop/OTA holds before APatch's NoMount scan, payload activation,
+# stock snapshotting or any later provider discovery.
+if [ -f "$MODDIR/common/boot_ota_guard.sh" ]; then
+    MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/boot_ota_guard.sh" hook "$MODDIR" \
+        >> "$MODDIR/logs/boot-ota-guard.log" 2>&1
+    _boot_guard_rc=$?
+    case "$_boot_guard_rc" in
+        0) ;;
+        10|12)
+            if [ -f "$MODDIR/common/mount_backend_runtime.sh" ]; then
+                MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/mount_backend_runtime.sh" hook post-fs-data \
+                    >> "$MODDIR/logs/mount-backend.log" 2>&1 || true
+            fi
+            printf '[BOOT-OTA-GUARD] mount/provider work stopped for this boot rc=%s\n' "$_boot_guard_rc" \
+                >> "$MODDIR/logs/boot-ota-guard.log"
+            exit 0
+            ;;
+        *)
+            printf '[BOOT-OTA-GUARD] helper failed rc=%s; failing closed before provider scan\n' "$_boot_guard_rc" \
+                >> "$MODDIR/logs/boot-ota-guard.log"
+            exit 1
+            ;;
+    esac
+fi
+
 # APatch scans providers before module post-fs-data. Its owned common hook
 # runs this preparation first, including a staged modules_update installation.
 if [ -f "$MODDIR/common/apatch_boot_prepare.sh" ]; then

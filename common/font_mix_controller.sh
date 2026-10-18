@@ -12,7 +12,19 @@ fi
 export MODDIR
 LEGACY_V14_MIX="$MODDIR/common/legacy_v14_4/mix_router.sh"
 case "${1:-config}" in
-    start|config|status|recover|reconcile)
+    start)
+        if [ -f "$MODDIR/common/boot_ota_guard.sh" ] && ! MODDIR="$MODDIR" MODULE_DIR="$MODDIR" \
+            sh "$MODDIR/common/boot_ota_guard.sh" allow-apply "$MODDIR" mix >/dev/null 2>&1; then
+            printf '{"status":"error","message":"开机安全保护当前只允许恢复系统默认字体；OTA 期间请先完成原厂扫描"}\n'
+            exit 1
+        fi
+        if [ -f "$LEGACY_V14_MIX" ]; then
+            exec sh "$LEGACY_V14_MIX" "$@"
+        fi
+        printf '{"status":"error","message":"缺少字体组合核心，请重新安装当前版本模块"}\n'
+        exit 1
+        ;;
+    config|status|recover|reconcile)
         if [ -f "$LEGACY_V14_MIX" ]; then
             exec sh "$LEGACY_V14_MIX" "$@"
         fi

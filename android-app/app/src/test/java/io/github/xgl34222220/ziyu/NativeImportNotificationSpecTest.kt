@@ -76,4 +76,41 @@ class NativeImportNotificationSpecTest {
 
         assertEquals(listOf(NativeImportNotificationAction.CLEAR), spec.actions)
     }
+
+    @Test
+    fun timeoutNoticeRetainsTheRunningQueueAndReportsItsSavedProgress() {
+        val running = NativeImportState(
+            taskId = "import-1",
+            phase = NativeImportPhase.RUNNING,
+            total = 5,
+            processed = 2,
+            message = "正在导入",
+        )
+
+        val notice = nativeImportTimeoutNotice(running)
+
+        assertEquals(running.taskId, notice.taskId)
+        assertEquals(running.phase, notice.phase)
+        assertEquals(running.processed, notice.processed)
+        assertTrue(notice.message.contains("2/5"))
+        assertTrue(notice.message.contains("当前文件完成后暂停"))
+    }
+
+    @Test
+    fun deniedBackgroundStartExplainsThatAResumeMustHappenInTheApp() {
+        val paused = NativeImportState(
+            phase = NativeImportPhase.PAUSED,
+            total = 3,
+            processed = 1,
+        )
+
+        val notice = nativeImportDetachedNotice(
+            paused,
+            NativeImportDetachReason.FOREGROUND_START_REJECTED,
+        )
+
+        assertEquals(paused.phase, notice.phase)
+        assertTrue(notice.message.contains("未能启动后台导入服务"))
+        assertTrue(notice.message.contains("打开字域后可继续导入"))
+    }
 }

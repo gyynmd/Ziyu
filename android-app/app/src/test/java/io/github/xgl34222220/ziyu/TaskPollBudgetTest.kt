@@ -15,7 +15,7 @@ class TaskPollBudgetTest {
     }
 
     @Test
-    fun backgroundPauseDoesNotTurnACompletedTaskIntoAUiTimeout() {
+    fun explicitUserPauseExtendsTheDeadlineOnlyByThePausedDuration() {
         var now = 0L
         val budget = TaskPollBudget(390_000L) { now }
         now = 10_000L
@@ -24,6 +24,15 @@ class TaskPollBudgetTest {
         assertEquals(380_000L, budget.remainingMs)
         now += 5_000L
         assertEquals(375_000L, budget.remainingMs)
+    }
+
+    @Test
+    fun backgroundTimeStillConsumesTheTaskDeadline() {
+        var now = 0L
+        val budget = TaskPollBudget(390_000L) { now }
+        now = 10_000L
+        now += 3_600_000L
+        assertEquals(0L, budget.remainingMs)
     }
 
     @Test
@@ -36,5 +45,15 @@ class TaskPollBudgetTest {
         now = 740_000L
         budget.extendTo(750_000L)
         assertEquals(10_000L, budget.remainingMs)
+    }
+
+    @Test
+    fun unchangedTasksBackOffAndProgressChangesRestoreNormalCadence() {
+        assertEquals(1_000L, taskPollIntervalMs(0L, unchangedPolls = 0))
+        assertEquals(2_000L, taskPollIntervalMs(30_000L, unchangedPolls = 0))
+        assertEquals(2_000L, taskPollIntervalMs(10_000L, unchangedPolls = 3))
+        assertEquals(4_000L, taskPollIntervalMs(30_000L, unchangedPolls = 6))
+        assertEquals(1_000L, taskPollIntervalMs(10_000L, unchangedPolls = 0))
+        assertEquals(15_000L, BACKGROUND_TASK_POLL_INTERVAL_MS)
     }
 }

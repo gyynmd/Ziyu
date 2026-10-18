@@ -11,6 +11,33 @@ UNIVERSAL_VERIFY="$MODDIR/common/universal_font_runtime_verify.sh"
 MOUNT_BACKEND_RUNTIME="$MODDIR/common/mount_backend_runtime.sh"
 LEGACY_MODE="$MODDIR/config/font_runtime_legacy_v14_4.conf"
 V4_SERVICE="$MODDIR/.luoshu-runtime/core/service.sh"
+mkdir -p "$MODDIR/logs" 2>/dev/null || true
+
+# This bounded worker is independent of this module's service callback, which
+# a manager may skip after the early guard writes an owned disable marker.
+if [ -f "$MODDIR/common/boot_ota_guard.sh" ]; then
+    MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/boot_ota_guard.sh" schedule-watcher "$MODDIR" \
+        >> "$MODDIR/logs/boot-ota-guard.log" 2>&1 || true
+    if [ "$(getprop sys.boot_completed 2>/dev/null | tr -d '\r\n')" = 1 ]; then
+        MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/boot_ota_guard.sh" complete "$MODDIR" \
+            >> "$MODDIR/logs/boot-ota-guard.log" 2>&1 || true
+    fi
+    MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/boot_ota_guard.sh" hook "$MODDIR" \
+        >> "$MODDIR/logs/boot-ota-guard.log" 2>&1
+    _boot_guard_rc=$?
+    case "$_boot_guard_rc" in
+        0) ;;
+        10|12)
+            [ ! -f "$MOUNT_BACKEND_RUNTIME" ] || MODDIR="$MODDIR" MODULE_DIR="$MODDIR" \
+                sh "$MOUNT_BACKEND_RUNTIME" hook service >> "$MODDIR/logs/mount-backend.log" 2>&1 || true
+            exit 0
+            ;;
+        *)
+            printf '[BOOT-OTA-GUARD] service safety check failed rc=%s\n' "$_boot_guard_rc" >> "$MODDIR/logs/boot-ota-guard.log"
+            exit 1
+            ;;
+    esac
+fi
 
 # A Meta backend is verified after the manager's mount stage. The runtime is a
 # no-op for a self backend already committed at its Root-specific hook.

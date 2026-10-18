@@ -4,10 +4,27 @@
 set +e
 MODDIR="${0%/*}"
 MODULE_DIR="$MODDIR"
+mkdir -p "$MODDIR/logs" 2>/dev/null || true
 case "${KSU_LATE_LOAD:-}:${KSU_RUNTIME_MODE:-}" in
     1:*|*:late-load) ;;
     *) exit 0 ;;
 esac
+
+if [ -f "$MODDIR/common/boot_ota_guard.sh" ]; then
+    MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/boot_ota_guard.sh" hook "$MODDIR" \
+        >> "$MODDIR/logs/boot-ota-guard.log" 2>&1
+    _boot_guard_rc=$?
+    case "$_boot_guard_rc" in
+        0) ;;
+        10|12)
+            [ ! -f "$MODDIR/common/mount_backend_runtime.sh" ] || \
+                MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/mount_backend_runtime.sh" hook post-fs-data \
+                    >> "$MODDIR/logs/mount-backend.log" 2>&1 || true
+            exit 0
+            ;;
+        *) exit 1 ;;
+    esac
+fi
 
 mkdir -p "$MODDIR/config" "$MODDIR/logs" 2>/dev/null || exit 1
 _boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null | tr -d '\r\n')

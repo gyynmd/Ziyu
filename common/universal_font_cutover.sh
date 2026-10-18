@@ -151,6 +151,13 @@ _uc_paths() {
 _uc_switch() {
     _uc_font="$1"
     [ -n "$_uc_font" ] || { printf '{"status":"error","message":"未指定字体"}\n'; return 1; }
+    if [ -f "$MODDIR/common/boot_ota_guard.sh" ]; then
+        MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/boot_ota_guard.sh" \
+            allow-apply "$MODDIR" "$_uc_font" >> "$LOG_FILE" 2>&1 || {
+            printf '{"status":"error","message":"开机安全保护当前只允许恢复系统默认字体；OTA 期间请先完成原厂扫描"}\n'
+            return 1
+        }
+    fi
     _uc_log "switch runtime version=$(_uc_value "$MODDIR/module.prop" version) boot=$(cat /proc/sys/kernel/random/boot_id) font=$_uc_font"
     if ! _uc_recover_pending; then
         printf '{"status":"error","message":"上一字体提交尚未恢复或仍在运行，请稍后重试并导出日志"}\n'
@@ -252,6 +259,15 @@ _uc_switch() {
         _uc_log "WARN universal stage not ready font=$_uc_font rc=$_uc_stage_rc detail=$_uc_stage_message"
         _uc_legacy "$_uc_font" universal-stage-not-ready
         return $?
+    fi
+
+    if [ -f "$MODDIR/common/boot_ota_guard.sh" ]; then
+        if ! MODDIR="$MODDIR" MODULE_DIR="$MODDIR" sh "$MODDIR/common/boot_ota_guard.sh" \
+            record-apply "$MODDIR" "$_uc_font" >> "$LOG_FILE" 2>&1; then
+            _uc_write_state failed "$_uc_font" universal guard-approval-failed
+            printf '{"status":"error","message":"通用字体负载已生成，但开机保护未确认其身份；保护仍保持启用，请查看日志"}\n'
+            return 1
+        fi
     fi
 
     _uc_write_state staged "$_uc_font" universal ready-next-boot

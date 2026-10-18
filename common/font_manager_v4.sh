@@ -227,6 +227,13 @@ switch_font() {
     _font_id="$1"
     LUOSHU_SWITCH_REUSED=false
     [ -n "$_font_id" ] || { echo '错误：未指定字体' >&2; return 1; }
+    if [ -f "$MODULE_DIR/common/boot_ota_guard.sh" ]; then
+        MODDIR="$MODULE_DIR" MODULE_DIR="$MODULE_DIR" sh "$MODULE_DIR/common/boot_ota_guard.sh" \
+            allow-apply "$MODULE_DIR" "$_font_id" || {
+            echo '错误：开机安全保护当前只允许恢复系统默认字体；OTA 期间请先完成原厂扫描' >&2
+            return 1
+        }
+    fi
 
     # A complete boot already proved this exact payload. Reapplying it must be a metadata-only
     # no-op: clearing the live tree first discarded the proof and forced the 94% FontTools rebuild.
@@ -381,6 +388,13 @@ if [ -f "$MODULE_DIR/common/font_provider_cache.sh" ]; then
         luoshu_provider_cache_restore >/dev/null 2>&1 || true
     fi
 fi
+    if [ -f "$MODULE_DIR/common/boot_ota_guard.sh" ]; then
+        MODDIR="$MODULE_DIR" MODULE_DIR="$MODULE_DIR" sh "$MODULE_DIR/common/boot_ota_guard.sh" \
+            record-apply "$MODULE_DIR" "$_font_id" >> "$MODULE_DIR/logs/boot-ota-guard.log" 2>&1 || {
+            echo '错误：字体已生成，但开机保护未能确认这一代负载；保护仍保持启用，请查看日志' >&2
+            return 7
+        }
+    fi
     if [ "$_font_id" != default ]; then
         _recent="$CONFIG_DIR/recent_fonts.conf"
         _tmp="${_recent}.tmp.$$"

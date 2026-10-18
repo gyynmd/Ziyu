@@ -34,12 +34,21 @@ _dfload_write_simple() {
     _dfload_mode="${4:-compatibility}"
     _dfload_module_dir="$(_dfload_module)"
     _dfload_conf="$_dfload_module_dir/config/device-font-load-verification.conf"
+    _dfload_generation_identity=''
+    if [ -f "$_dfload_module_dir/config/boot-ota-pending.conf" ] &&
+       [ ! -L "$_dfload_module_dir/config/boot-ota-pending.conf" ] &&
+       [ -f "$_dfload_module_dir/common/boot_ota_guard.sh" ]; then
+        _dfload_generation_identity=$(MODDIR="$_dfload_module_dir" MODULE_DIR="$_dfload_module_dir" \
+            sh "$_dfload_module_dir/common/boot_ota_guard.sh" loaded-generation-identity \
+            "$_dfload_module_dir" "$_dfload_active" 2>/dev/null)
+    fi
     mkdir -p "${_dfload_conf%/*}" 2>/dev/null || return 1
     {
         printf 'state=%s\n' "$_dfload_state"
         printf 'mode=%s\n' "$_dfload_mode"
         printf 'activeFont=%s\n' "$_dfload_active"
         printf 'reason=%s\n' "$_dfload_reason"
+        printf 'generationIdentity=%s\n' "$_dfload_generation_identity"
         printf 'bootId=%s\n' "$(_dfload_boot_id)"
         printf 'payloadManifestSha256=%s\n' "$(sha256sum "$_dfload_module_dir/config/font-payload-manifest.conf" 2>/dev/null | awk '{print $1}')"
         printf 'time=%s\n' "$(date +%s 2>/dev/null || echo 0)"
